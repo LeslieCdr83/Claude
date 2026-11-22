@@ -52,6 +52,22 @@ class Ingredient(BaseModel):
 class Reglages(BaseModel):
     cle_api: str | None = None
     effacer_cle: bool = False
+    drive: str | None = None  # lien d'une recherche dans ton Leclerc Drive
+
+
+PARAMETRES_RECHERCHE = ("TexteRecherche", "texteRecherche", "q", "query", "search", "recherche")
+
+
+def modele_drive(url: str) -> str:
+    """Transforme le lien d'une recherche (ex. ...recherche.aspx?TexteRecherche=farine)
+    en modèle où {q} remplace le produit cherché."""
+    url = url.strip()
+    if not url.startswith("https://"):
+        raise HTTPException(400, "Colle un lien qui commence par https://")
+    for nom in PARAMETRES_RECHERCHE:
+        if re.search(rf"[?&]{nom}=", url):
+            return re.sub(rf"([?&]{nom}=)[^&#]*", r"\g<1>{q}", url, count=1)
+    raise HTTPException(400, "Ce lien ne contient pas de recherche. Cherche un produit sur ton drive, puis copie l'adresse.")
 
 
 class ReponseManuelle(BaseModel):
@@ -170,7 +186,8 @@ def analyser(recette_id: int, mode: str | None = None) -> None:
 @app.get("/api/etat")
 def etat():
     return {"api": config.disponible("api"), "claude_code": config.disponible("abonnement"),
-            "modele_whisper": config.MODELE_WHISPER, "portions_defaut": config.PORTIONS_DEFAUT}
+            "modele_whisper": config.MODELE_WHISPER, "portions_defaut": config.PORTIONS_DEFAUT,
+            "drive": config.lire_reglages().get("drive", "")}
 
 
 def _masquer(cle: str) -> str:
@@ -183,6 +200,7 @@ def lire_reglages():
         "cle_api": _masquer(config.cle_api()),
         "claude_code": config.chemin_claude_code() or "",
         "etat": _etat_claude(),
+        "drive": config.lire_reglages().get("drive", ""),
     }
 
 
@@ -196,6 +214,8 @@ def modifier_reglages(donnees: Reglages):
         valeurs["cle_api"] = cle
     if donnees.effacer_cle:
         valeurs["cle_api"] = None
+    if donnees.drive is not None:
+        valeurs["drive"] = modele_drive(donnees.drive) if donnees.drive.strip() else None
     config.ecrire_reglages(valeurs)
     return lire_reglages()
 

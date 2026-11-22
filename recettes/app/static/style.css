@@ -207,3 +207,6 @@ details pre { white-space: pre-wrap; font-family: inherit; font-size: .9rem; col
 .jour-actions { display: flex; flex-direction: column; gap: 6px; }
 .jour-actions button { padding: 6px 10px; justify-content: center; }
 .barre nav { gap: 14px; }
+
+.ingredients li .drive { flex: none; align-self: center; text-decoration: none; font-size: 1.1rem; padding: 4px 8px;
+  border: 1px solid var(--bord); border-radius: 8px; background: var(--carte); }

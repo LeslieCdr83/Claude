@@ -236,3 +236,12 @@ def test_demande_et_reponse_combinees():
     maj = client.post(f"/api/recettes/{r['id']}/reponse", json={"type": "auto", "texte": partiel}).json()
     assert maj["adaptations"]["airfryer"]["resume"] == "Air Fry 200 °C"
     assert maj["adaptations"]["thermomix"]["faisable"] == "oui"
+
+
+def test_lien_leclerc_drive():
+    url = "https://fd9-courses.leclercdrive.fr/magasin-123-123-Ville/recherche.aspx?TexteRecherche=farine"
+    r = client.put("/api/reglages", json={"drive": url}).json()
+    assert r["drive"] == url.replace("farine", "{q}")
+    assert client.get("/api/etat").json()["drive"].endswith("TexteRecherche={q}")
+    assert client.put("/api/reglages", json={"drive": "https://exemple.fr/accueil"}).status_code == 400
+    assert client.put("/api/reglages", json={"drive": ""}).json()["drive"] == ""

@@ -102,6 +102,14 @@ Le tirage se fait dans l'appli, sans Claude : il est gratuit et immédiat.
 
 Sur une fiche, le bouton « Coller un JSON Claude » accepte une fiche complète ou une version TM7 et Ninja. L'appli reconnaît le type. Les champs absents gardent leur valeur : tu peux coller seulement les ingrédients ou seulement les étapes. La page « + » (nouvelle recette) permet aussi de créer une recette à partir d'un JSON.
 
+## Leclerc Drive
+
+Leclerc Drive ne permet pas à une autre appli de remplir ton panier. L'appli t'aide autrement : dans la liste de courses, 🛒 ouvre la recherche du produit dans ton magasin, et la ligne se coche. Tu choisis le produit et tu l'ajoutes au panier.
+
+Pour l'activer, cherche un produit dans ton drive (par exemple « farine »), copie l'adresse de la page de résultats et colle-la dans Réglages, section Leclerc Drive.
+
+Le bouton « Partager » de la liste de courses envoie la liste en texte vers Notes, Rappels, SMS ou WhatsApp.
+
 ## Instagram et Facebook
 
 Instagram et Facebook bloquent souvent le téléchargement sans connexion. Dans ce cas :

@@ -520,6 +520,16 @@ async function vueReglages() {
       <div class="actions"><button type="button" data-tester="abonnement" ${r.claude_code ? "" : "disabled"}>Tester Claude Code</button></div>
       <p class="aide" id="test-abonnement"></p>
     </section>
+    <form class="bloc formulaire" id="form-drive">
+      <h2>Leclerc Drive</h2>
+      <p class="aide">Dans ton drive, cherche un produit (par exemple « farine »), puis copie l'adresse de la page de résultats et colle-la ici. Dans la liste de courses, 🛒 ouvrira la recherche de chaque produit dans ton magasin.</p>
+      <label for="drive">Lien d'une recherche</label>
+      <input id="drive" type="url" autocomplete="off" value="${echap((r.drive || "").replace("{q}", "farine"))}" placeholder="https://fd...leclercdrive.fr/magasin-.../recherche.aspx?TexteRecherche=farine">
+      <div class="actions">
+        <button class="principal" type="submit">Enregistrer</button>
+        ${r.drive ? `<a class="bouton" target="_blank" rel="noopener" href="${echap(r.drive.replace("{q}", "farine"))}">Essayer</a>` : ""}
+      </div>
+    </form>
     <section class="bloc">
       <h2>Appli Claude (copier-coller)</h2>
       <p class="aide">Rien à configurer. Fonctionne avec n'importe quel compte Claude, même gratuit.</p>
@@ -541,6 +551,15 @@ async function vueReglages() {
     if (!confirm("Effacer la clé API enregistrée ?")) return;
     try { await enregistrer({ effacer_cle: true }); toast("Clé effacée."); vueReglages(); } catch (err) { toast(err.message); }
   };
+  document.getElementById("form-drive").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api("/api/reglages", { method: "PUT", body: { drive: document.getElementById("drive").value } });
+      etat = await api("/api/etat");
+      toast("Lien Leclerc Drive enregistré.");
+      vueReglages();
+    } catch (err) { toast(err.message); }
+  });
   vue.querySelectorAll("[data-tester]").forEach((b) => b.onclick = async () => {
     const mode = b.dataset.tester;
     const sortie = document.getElementById(`test-${mode}`);
@@ -806,6 +825,14 @@ async function vueMenus() {
 }
 
 // ---------- Courses ----------
+// Terme de recherche simple : "jambon blanc (en tranches épaisses)" devient "jambon blanc".
+function termeRecherche(nom) {
+  return nom.replace(/\(.*?\)/g, " ").split(/[,;:]| ou | pour /)[0]
+    .replace(/(^|\s)(bio|maison|facultatif|selon ton goût)(?=\s|$)/gi, " ")
+    .replace(/\s+/g, " ").trim() || nom;
+}
+const lienDrive = (nom) => etat.drive.replace("{q}", encodeURIComponent(termeRecherche(nom)));
+
 async function vueCourses() {
   const p = panier();
   if (!p.length) {
@@ -840,10 +867,17 @@ async function vueCourses() {
           const qte = [l.total ? formater(l.total) : "", ...l.autres].filter(Boolean).join(" + ");
           const fait = coches.includes(cle);
           return `<li><label class="${fait ? "coche" : ""}"><input type="checkbox" data-cle="${echap(cle)}" ${fait ? "checked" : ""}>
-            <span class="qte">${l.estimee && qte ? "≈ " : ""}${echap([qte, l.unite].filter(Boolean).join(" "))}</span><span>${echap(l.nom)}</span></label></li>`;
+            <span class="qte">${l.estimee && qte ? "≈ " : ""}${echap([qte, l.unite].filter(Boolean).join(" "))}</span><span>${echap(l.nom)}</span></label>
+            ${etat.drive ? `<a class="drive" href="${echap(lienDrive(l.nom))}" target="_blank" rel="noopener" data-drive="${echap(cle)}" aria-label="Chercher ${echap(l.nom)} sur Leclerc Drive">🛒</a>` : ""}</li>`;
         }).join("")}
       </ul>
-      <div class="actions"><button id="copier">Copier la liste</button></div>
+      ${etat.drive
+        ? `<p class="aide">🛒 ouvre la recherche du produit dans ton Leclerc Drive et coche la ligne.</p>`
+        : `<p class="aide">Pour chercher chaque produit dans ton Leclerc Drive en un geste, ajoute le lien de ton magasin dans <a href="#/reglages">Réglages</a>.</p>`}
+      <div class="actions">
+        ${navigator.share ? `<button id="partager">Partager</button>` : ""}
+        <button id="copier">Copier la liste</button>
+      </div>
     </section>`;
 
   vue.querySelectorAll("input[data-cle]").forEach((c) => c.addEventListener("change", () => {
@@ -853,11 +887,22 @@ async function vueCourses() {
     ecrireStock("coches-courses", liste);
     c.parentElement.classList.toggle("coche", c.checked);
   }));
+  // Ouvrir la recherche drive coche la ligne : tu vois où tu en es en revenant.
+  vue.querySelectorAll("[data-drive]").forEach((a) => a.addEventListener("click", () => {
+    const liste = lireStock("coches-courses", []);
+    if (!liste.includes(a.dataset.drive)) liste.push(a.dataset.drive);
+    ecrireStock("coches-courses", liste);
+    const label = a.parentElement.querySelector("label");
+    label.classList.add("coche");
+    label.querySelector("input").checked = true;
+  }));
   document.getElementById("vider").onclick = () => { ecrireStock("courses", []); ecrireStock("coches-courses", []); majCompteur(); vueCourses(); };
+  const texte = triees.map(([, l]) => `- ${l.estimee ? "≈" : ""}${[l.total ? formater(l.total) : "", ...l.autres].filter(Boolean).join(" + ")} ${l.unite || ""} ${l.nom}`.replace(/\s+/g, " ").trim()).join("\n");
   document.getElementById("copier").onclick = async () => {
-    const texte = triees.map(([, l]) => `- ${l.estimee ? "≈" : ""}${[l.total ? formater(l.total) : "", ...l.autres].filter(Boolean).join(" + ")} ${l.unite || ""} ${l.nom}`.replace(/\s+/g, " ").trim()).join("\n");
     try { await navigator.clipboard.writeText(texte); toast("Liste copiée."); } catch (_) { toast("Copie impossible sur ce navigateur."); }
   };
+  const partager = document.getElementById("partager");
+  if (partager) partager.onclick = () => navigator.share({ title: "Liste de courses", text: texte }).catch(() => {});
 }
 
 // ---------- Routeur ----------
