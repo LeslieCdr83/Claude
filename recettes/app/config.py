@@ -110,6 +110,15 @@ def mode_claude() -> str:
     return "abonnement" if chemin_claude_code() else "api"
 
 
+def disponible(mode: str | None) -> bool:
+    """Vrai si ce mode peut fonctionner tout de suite sur cet ordinateur."""
+    if mode == "api":
+        return cle_api_presente()
+    if mode == "abonnement":
+        return chemin_claude_code() is not None
+    return False
+
+
 def cle_claude_presente() -> bool:
     """Vrai si Claude est utilisable automatiquement, par la clé API ou par l'abonnement."""
     if mode_claude() == "manuel":

@@ -72,15 +72,15 @@ def texte_fiche(titre: str, legende: str, transcription: str) -> str:
             f"<transcription>\n{transcription or '(aucune voix détectée)'}\n</transcription>")
 
 
-def structurer(titre: str, legende: str, transcription: str, images: list[Path]) -> dict:
+def structurer(titre: str, legende: str, transcription: str, images: list[Path], mode: str | None = None) -> dict:
     """Appelle Claude et renvoie un dictionnaire conforme à SCHEMA_RECETTE."""
-    return _appeler_claude(texte_fiche(titre, legende, transcription), SCHEMA_RECETTE, images[:10])
+    return _appeler_claude(texte_fiche(titre, legende, transcription), SCHEMA_RECETTE, images[:10], mode)
 
 
-def _appeler_claude(texte: str, schema: dict, images: list[Path] = ()) -> dict:
+def _appeler_claude(texte: str, schema: dict, images: list[Path] = (), mode: str | None = None) -> dict:
     """Passe par l'abonnement Claude (Claude Code) ou par l'API, selon MODE_CLAUDE."""
     images = [c for c in images if c.suffix.lower() in TYPES_IMAGE and c.exists()]
-    if config.mode_claude() == "abonnement":
+    if (mode or config.mode_claude()) == "abonnement":
         return _appeler_abonnement(texte, schema, images)
     return _appeler_api(texte, schema, images)
 
@@ -250,9 +250,9 @@ Pour chaque appareil :
 - N'invente pas de fonction qui n'existe pas sur l'appareil."""
 
 
-def adapter(recette: dict) -> dict:
+def adapter(recette: dict, mode: str | None = None) -> dict:
     """Renvoie {"thermomix": {...}, "airfryer": {...}} pour une recette déjà structurée."""
-    return _appeler_claude(texte_adaptation(recette), SCHEMA_ADAPTATIONS)
+    return _appeler_claude(texte_adaptation(recette), SCHEMA_ADAPTATIONS, mode=mode)
 
 
 def texte_adaptation(recette: dict) -> str:
@@ -345,8 +345,7 @@ def valider(valeur, schema: dict, chemin: str = "réponse"):
 
 # ---------- Test de connexion (page Réglages) ----------
 
-def tester_connexion() -> str:
-    mode = config.mode_claude()
+def tester_connexion(mode: str) -> str:
     if mode == "manuel":
         return "Mode manuel : rien à tester. Tu colleras les demandes dans l'appli Claude."
     if mode == "api":

@@ -1,7 +1,7 @@
 "use strict";
 
 const vue = document.getElementById("vue");
-let etat = { cle_claude: false };
+let etat = { api: false, claude_code: false };
 let filtre = { q: "", tag: "" };
 let minuterie = null;
 
@@ -73,16 +73,48 @@ function imageRecette(r) {
   return r.miniature ? `/images/${encodeURI(r.miniature)}` : "/icone.svg";
 }
 
+// ---------- Choix entre API Claude, Claude Code et copier-coller ----------
+const NOMS_MODES = { api: "API Claude", abonnement: "Claude Code", manuel: "Appli Claude (copier-coller)" };
+const modeDispo = (mode) => (mode === "api" ? etat.api : mode === "abonnement" ? etat.claude_code : true);
+// Dernier mode utilisé, s'il fonctionne encore. Sinon le premier disponible.
+function modePrefere() {
+  const m = lireStock("mode-prefere", "");
+  if (m && m !== "manuel" && modeDispo(m)) return m;
+  return etat.claude_code ? "abonnement" : etat.api ? "api" : "";
+}
+function boutonMode(mode, type = "button", action = "") {
+  const indispo = !modeDispo(mode);
+  const titre = mode === "api" ? "Enregistre une clé API dans Réglages" : "Installe Claude Code (voir le README)";
+  return `<button type="${type}" data-mode="${mode}" ${action ? `data-action="${action}"` : ""}
+    class="${mode === modePrefere() ? "principal" : ""}" ${indispo ? `disabled title="${titre}"` : ""}>${NOMS_MODES[mode]}</button>`;
+}
+// Explique pourquoi un bouton est grisé (pas de survol sur téléphone).
+function aideModes() {
+  const manque = [];
+  if (!etat.api) manque.push(`API Claude : enregistre une clé dans <a href="#/reglages">Réglages</a>.`);
+  if (!etat.claude_code) manque.push("Claude Code : installe-le sur l'ordinateur (voir le README).");
+  return manque.length ? `<p class="aide">${manque.join("<br>")}</p>` : "";
+}
+function choixClaude(action) {
+  return `<div class="choix-claude">${boutonMode("api", "button", action)}${boutonMode("abonnement", "button", action)}${boutonMode("manuel", "button", action)}</div>${aideModes()}`;
+}
+
 // ---------- Liste ----------
 async function vueListe() {
-  const alerte = claudeDispo() ? "" : `<p class="alerte">Claude n'est pas encore connecté. L'import fonctionne déjà : il garde la vidéo, la légende et la transcription. Choisis comment utiliser Claude dans <a href="#/reglages">Réglages</a>.</p>`;
+  const alerte = etat.api || etat.claude_code ? "" : `<p class="alerte">Ni clé API ni Claude Code pour l'instant. Tu peux importer sans analyse, puis copier-coller avec l'appli Claude. Pour l'analyse automatique, enregistre une clé dans <a href="#/reglages">Réglages</a> ou installe Claude Code.</p>`;
   vue.innerHTML = `
     <section class="import">
       <h2>Ajouter une recette</h2>
       <p>Colle le lien d'une vidéo TikTok, Instagram, Facebook ou YouTube.</p>
-      <form class="ligne" id="form-import">
+      <form id="form-import">
         <input type="text" id="champ-url" placeholder="https://www.tiktok.com/@..." inputmode="url" autocomplete="off" required>
-        <button class="principal" type="submit">Importer</button>
+        <p class="aide">Importer et rédiger la fiche avec :</p>
+        <div class="choix-claude">
+          ${boutonMode("api", "submit")}
+          ${boutonMode("abonnement", "submit")}
+          <button type="submit" data-mode="">Sans analyse</button>
+        </div>
+        ${aideModes()}
       </form>
     </section>
     ${alerte}
@@ -95,8 +127,17 @@ async function vueListe() {
   document.getElementById("form-import").addEventListener("submit", async (e) => {
     e.preventDefault();
     const champ = document.getElementById("champ-url");
-    await lancerImport(champ.value);
+    const mode = e.submitter ? e.submitter.dataset.mode : modePrefere();
+    if (mode) ecrireStock("mode-prefere", mode);
+    await lancerImport(champ.value, mode);
     champ.value = "";
+  });
+  // Touche Entrée : importe avec le mode préféré (un bouton grisé bloquerait l'envoi du formulaire).
+  document.getElementById("champ-url").addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    document.getElementById("form-import").requestSubmit(
+      document.querySelector(`#form-import button[data-mode="${modePrefere()}"]`) || undefined);
   });
   let delai;
   document.getElementById("recherche").addEventListener("input", (e) => {
@@ -159,9 +200,9 @@ function surveiller(actif, rappel) {
   if (actif) minuterie = setTimeout(rappel, 2500);
 }
 
-async function lancerImport(texte) {
+async function lancerImport(texte, mode = modePrefere()) {
   try {
-    const res = await api("/api/importer", { method: "POST", body: { url: texte } });
+    const res = await api("/api/importer", { method: "POST", body: { url: texte, mode: mode || null } });
     if (res.deja_presente) toast("Cette recette est déjà dans ta bibliothèque.");
     else toast("Import lancé. Compte 30 secondes à 2 minutes.");
     location.hash = `#/recette/${res.id}`;
@@ -171,16 +212,10 @@ async function lancerImport(texte) {
 }
 
 // ---------- Fiche ----------
-const modeManuel = () => etat.mode === "manuel";
-const claudeDispo = () => etat.cle_claude || modeManuel();
-
-// Le message d'un import fait avant de connecter Claude est remplacé par la marche à suivre actuelle.
+// Les anciens messages de brouillon renvoient tous vers les boutons de choix.
 function messageFiche(r) {
-  const ancien = /^(Pas de clé Claude|Claude n'est pas connecté)/.test(r.erreur || "");
-  if (r.statut !== "brouillon" || !ancien) return r.erreur;
-  if (modeManuel()) return "Clique sur « Analyser avec l'appli Claude » pour obtenir la fiche.";
-  if (etat.cle_claude) return "Claude est connecté. Clique sur « Analyser avec Claude » pour rédiger la fiche de cette recette.";
-  return r.erreur;
+  const ancien = /^(Pas de clé Claude|Claude n'est pas connecté|Vidéo importée)/.test(r.erreur || "");
+  return r.statut === "brouillon" && ancien ? "Vidéo importée. Choisis comment rédiger la fiche ci-dessous." : r.erreur;
 }
 
 async function vueRecette(id) {
@@ -202,11 +237,15 @@ async function vueRecette(id) {
     r.temps_cuisson && `🔥 Cuisson ${r.temps_cuisson}`,
   ].filter(Boolean).map((c) => `<span>${echap(c)}</span>`).join("");
 
-  const boutonAnalyser = r.source_url && (r.statut === "brouillon" || r.statut === "pret")
-    ? `<button id="b-analyser" ${claudeDispo() ? "" : "disabled title='Connecte Claude dans Réglages'"}>${modeManuel() ? "Analyser avec l'appli Claude" : r.statut === "pret" ? "Réanalyser" : "Analyser avec Claude"}</button>` : "";
+  const analysable = r.source_url || r.legende || r.transcription;
 
   vue.innerHTML = `
     ${r.erreur ? `<p class="alerte">${echap(messageFiche(r))}</p>` : ""}
+    ${r.statut === "brouillon" && analysable ? `
+      <section class="bloc">
+        <h2>Rédiger la fiche avec</h2>
+        ${choixClaude("analyser")}
+      </section>` : ""}
     <section class="bloc" id="manuel" hidden></section>
     <div class="fiche-entete">
       <img src="${imageRecette(r)}" alt="">
@@ -220,7 +259,6 @@ async function vueRecette(id) {
           <button id="b-favori">${r.favori ? "❤️ Favori" : "🤍 Favori"}</button>
           <button id="b-panier">${dansPanier ? "✓ Dans les courses" : "🛒 Ajouter aux courses"}</button>
           <a class="bouton" href="#/recette/${r.id}/modifier">Modifier</a>
-          ${boutonAnalyser}
           ${r.statut === "erreur" ? `<button id="b-reimporter" class="principal">Réessayer l'import</button>` : ""}
           <button id="b-imprimer">Imprimer</button>
           <button id="b-supprimer" class="danger">Supprimer</button>
@@ -246,6 +284,7 @@ async function vueRecette(id) {
     ${r.notes ? `<section class="bloc"><h2>Notes</h2><p>${echap(r.notes).replace(/\n/g, "<br>")}</p></section>` : ""}
 
     <section class="bloc">
+      ${r.statut === "pret" && analysable ? `<details><summary>Réanalyser la vidéo</summary>${choixClaude("analyser")}</details>` : ""}
       <details><summary>Légende du post</summary><pre>${echap(r.legende || "(vide)")}</pre></details>
       <details><summary>Transcription de la voix</summary><pre>${echap(r.transcription || "(aucune)")}</pre></details>
       ${r.images.length ? `<details><summary>Captures de la vidéo</summary><div class="captures">${r.images.map((i) => `<img src="/images/${encodeURI(i)}" alt="" loading="lazy">`).join("")}</div></details>` : ""}
@@ -297,13 +336,17 @@ async function vueRecette(id) {
     majCompteur();
     location.hash = "#/";
   };
-  const ba = document.getElementById("b-analyser");
-  if (ba) ba.onclick = async () => {
-    if (modeManuel()) return ouvrirManuel(r, "fiche");
-    try { await api(`/api/recettes/${r.id}/analyser`, { method: "POST" }); routeur(); } catch (err) { toast(err.message); }
-  };
+  vue.querySelectorAll('[data-action="analyser"]').forEach((b) => b.onclick = async () => {
+    const mode = b.dataset.mode;
+    if (mode === "manuel") return ouvrirManuel(r, "fiche");
+    ecrireStock("mode-prefere", mode);
+    try { await api(`/api/recettes/${r.id}/analyser?mode=${mode}`, { method: "POST" }); routeur(); } catch (err) { toast(err.message); }
+  });
   const br = document.getElementById("b-reimporter");
-  if (br) br.onclick = async () => { await api(`/api/recettes/${r.id}/reimporter`, { method: "POST" }); routeur(); };
+  if (br) br.onclick = async () => {
+    const mode = modePrefere();
+    try { await api(`/api/recettes/${r.id}/reimporter${mode ? `?mode=${mode}` : ""}`, { method: "POST" }); routeur(); } catch (err) { toast(err.message); }
+  };
 }
 
 // ---------- Thermomix et airfryer ----------
@@ -322,8 +365,7 @@ function dessinerAppareils(r, onglet = "thermomix") {
     zone.innerHTML = `
       <h2>Thermomix TM7 et airfryer Ninja</h2>
       <p class="aide">Claude rédige les deux versions pour ${etat.portions_defaut || 4} personnes, avec les réglages de chaque appareil.</p>
-      <div class="actions"><button class="principal" id="b-adapter" ${claudeDispo() && possible ? "" : "disabled"}>${modeManuel() ? "Adapter avec l'appli Claude" : "Adapter la recette"}</button></div>
-      ${claudeDispo() ? "" : `<p class="aide">Connecte Claude dans <a href="#/reglages">Réglages</a> pour utiliser cette fonction.</p>`}`;
+      ${possible ? `<p class="aide">Adapter avec :</p>${choixClaude("adapter")}` : `<p class="aide">Ajoute d'abord des ingrédients ou des étapes.</p>`}`;
   } else {
     const ap = a[onglet] || {};
     const pastille = (v, icone) => v ? `<span class="reglage">${icone} ${echap(v)}</span>` : "";
@@ -343,23 +385,24 @@ function dessinerAppareils(r, onglet = "thermomix") {
           <div class="reglages">${pastille(e.mode, "⚙️")}${pastille(e.temps, "⏱")}${pastille(e.temperature, "🌡")}${pastille(e.vitesse, "🌀")}</div>
         </li>`).join("")}</ol>` : ""}
       ${ap.conseils ? `<p class="aide">💡 ${echap(ap.conseils)}</p>` : ""}
-      <div class="actions"><button id="b-adapter" ${claudeDispo() ? "" : "disabled"}>${modeManuel() ? "Régénérer avec l'appli Claude" : "Régénérer"}</button></div>`;
+      <details><summary>Régénérer</summary>${choixClaude("adapter")}</details>`;
     zone.querySelectorAll("[data-onglet]").forEach((b) => b.onclick = () => dessinerAppareils(r, b.dataset.onglet));
   }
-  const bouton = document.getElementById("b-adapter");
-  if (bouton) bouton.onclick = async () => {
-    if (modeManuel()) return ouvrirManuel(r, "adaptation");
-    bouton.disabled = true;
+  zone.querySelectorAll('[data-action="adapter"]').forEach((bouton) => bouton.onclick = async () => {
+    const mode = bouton.dataset.mode;
+    if (mode === "manuel") return ouvrirManuel(r, "adaptation");
+    ecrireStock("mode-prefere", mode);
+    zone.querySelectorAll('[data-action="adapter"]').forEach((b) => { b.disabled = true; });
     bouton.innerHTML = `<span class="chargement"></span> Adaptation en cours, 20 à 60 s`;
     try {
-      const maj = await api(`/api/recettes/${r.id}/adapter`, { method: "POST" });
+      const maj = await api(`/api/recettes/${r.id}/adapter?mode=${mode}`, { method: "POST" });
       r.adaptations = maj.adaptations;
       dessinerAppareils(r, onglet);
     } catch (err) {
       toast(err.message);
       dessinerAppareils(r, onglet);
     }
-  };
+  });
 }
 
 // ---------- Mode manuel : copier-coller avec l'appli Claude ----------
@@ -408,72 +451,60 @@ async function ouvrirManuel(r, type) {
 }
 
 // ---------- Réglages ----------
-const MODES = [
-  { cle: "abonnement", titre: "Abonnement Claude (Claude Code)", texte: "Automatique, sans jetons facturés. Il faut un abonnement Pro ou Max, et Claude Code installé et connecté sur cet ordinateur." },
-  { cle: "api", titre: "Clé API Claude", texte: "Automatique. Facturé à l'usage : environ 5 à 12 centimes par recette, fiche et appareils compris." },
-  { cle: "manuel", titre: "Manuel, avec l'appli Claude", texte: "Fonctionne avec n'importe quel compte Claude, même gratuit. Tu copies une demande dans Claude, puis tu recolles sa réponse ici." },
-];
-
 async function vueReglages() {
   const r = await api("/api/reglages");
   vue.innerHTML = `
     <form class="bloc formulaire" id="form-reglages">
-      <h2>Connexion à Claude</h2>
-      <p class="aide">${echap(r.etat)}</p>
-      <div class="modes">
-        ${MODES.map((m) => `
-          <label class="mode ${r.mode === m.cle ? "actif" : ""}">
-            <input type="radio" name="mode" value="${m.cle}" ${r.mode === m.cle ? "checked" : ""}>
-            <span><strong>${m.titre}</strong><br><span class="aide">${m.texte}</span>
-            ${m.cle === "abonnement" ? `<br><span class="aide">${r.claude_code ? "✓ Claude Code trouvé sur cet ordinateur." : "✗ Claude Code introuvable. Installe-le (voir le README), puis relance l'appli."}</span>` : ""}</span>
-          </label>`).join("")}
-      </div>
-      <div id="zone-cle">
-        <label for="cle">Clé API</label>
-        <input id="cle" type="password" autocomplete="off" placeholder="${r.cle_api ? echap(r.cle_api) : "sk-ant-..."}">
-        <p class="aide">${r.cle_api ? "Une clé est enregistrée. Laisse le champ vide pour la garder." : "Crée une clé sur console.anthropic.com."}</p>
-        ${r.cle_api ? `<button type="button" id="effacer-cle" class="danger">Effacer la clé</button>` : ""}
-      </div>
+      <h2>API Claude</h2>
+      <p class="aide">Facturé à l'usage : environ 5 à 12 centimes par recette, fiche et appareils compris.</p>
+      <label for="cle">Clé API</label>
+      <input id="cle" type="password" autocomplete="off" placeholder="${r.cle_api ? echap(r.cle_api) : "sk-ant-..."}">
+      <p class="aide">${r.cle_api ? "Une clé est enregistrée. Laisse le champ vide pour la garder." : "Crée une clé sur console.anthropic.com."}</p>
       <div class="actions">
         <button class="principal" type="submit">Enregistrer</button>
-        <button type="button" id="tester">Tester la connexion</button>
+        <button type="button" data-tester="api">Tester l'API</button>
+        ${r.cle_api ? `<button type="button" id="effacer-cle" class="danger">Effacer la clé</button>` : ""}
       </div>
-      <p class="aide" id="resultat-test"></p>
-    </form>`;
+      <p class="aide" id="test-api"></p>
+    </form>
+    <section class="bloc">
+      <h2>Claude Code</h2>
+      <p class="aide">Utilise ton abonnement Claude Pro ou Max, sans jetons facturés.</p>
+      <p>${r.claude_code ? "✓ Claude Code est installé sur cet ordinateur." : "✗ Claude Code est introuvable. Installe-le (voir le README), puis relance l'appli."}</p>
+      <div class="actions"><button type="button" data-tester="abonnement" ${r.claude_code ? "" : "disabled"}>Tester Claude Code</button></div>
+      <p class="aide" id="test-abonnement"></p>
+    </section>
+    <section class="bloc">
+      <h2>Appli Claude (copier-coller)</h2>
+      <p class="aide">Rien à configurer. Fonctionne avec n'importe quel compte Claude, même gratuit.</p>
+    </section>`;
 
   const form = document.getElementById("form-reglages");
-  const majZoneCle = () => {
-    const mode = form.querySelector("input[name=mode]:checked")?.value;
-    document.getElementById("zone-cle").hidden = mode !== "api";
-    form.querySelectorAll(".mode").forEach((l) => l.classList.toggle("actif", l.querySelector("input").checked));
-  };
-  form.querySelectorAll("input[name=mode]").forEach((i) => i.addEventListener("change", majZoneCle));
-  majZoneCle();
-
   async function enregistrer(extra = {}) {
-    const mode = form.querySelector("input[name=mode]:checked")?.value;
     const cle = document.getElementById("cle").value.trim();
-    await api("/api/reglages", { method: "PUT", body: { mode, ...(cle ? { cle_api: cle } : {}), ...extra } });
+    if (!cle && !Object.keys(extra).length) return;
+    await api("/api/reglages", { method: "PUT", body: { ...(cle ? { cle_api: cle } : {}), ...extra } });
     etat = await api("/api/etat");
   }
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
-    try { await enregistrer(); toast("Réglages enregistrés."); vueReglages(); } catch (err) { toast(err.message); }
+    try { await enregistrer(); toast("Clé enregistrée."); vueReglages(); } catch (err) { toast(err.message); }
   });
   const effacer = document.getElementById("effacer-cle");
   if (effacer) effacer.onclick = async () => {
     if (!confirm("Effacer la clé API enregistrée ?")) return;
     try { await enregistrer({ effacer_cle: true }); toast("Clé effacée."); vueReglages(); } catch (err) { toast(err.message); }
   };
-  document.getElementById("tester").onclick = async () => {
-    const sortie = document.getElementById("resultat-test");
+  vue.querySelectorAll("[data-tester]").forEach((b) => b.onclick = async () => {
+    const mode = b.dataset.tester;
+    const sortie = document.getElementById(`test-${mode}`);
     sortie.innerHTML = `<span class="chargement"></span> Test en cours...`;
     try {
-      await enregistrer();
-      const res = await api("/api/reglages/tester", { method: "POST" });
+      if (mode === "api") await enregistrer();
+      const res = await api(`/api/reglages/tester?mode=${mode}`, { method: "POST" });
       sortie.textContent = (res.ok ? "✓ " : "✗ ") + res.message;
     } catch (err) { sortie.textContent = "✗ " + err.message; }
-  };
+  });
 }
 
 // ---------- Édition ----------

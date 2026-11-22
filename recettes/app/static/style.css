@@ -192,3 +192,7 @@ details pre { white-space: pre-wrap; font-family: inherit; font-size: .9rem; col
 #manuel textarea { font-family: ui-monospace, monospace; font-size: .85rem; margin-top: 8px; }
 #manuel .etapes li { margin-bottom: 16px; }
 .barre nav { align-items: center; }
+
+.choix-claude { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.choix-claude button { flex: 1 1 auto; justify-content: center; }
+#form-import .aide { margin: 10px 0 0; }

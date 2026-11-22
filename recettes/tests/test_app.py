@@ -73,13 +73,15 @@ def test_import_sans_cle_donne_un_brouillon(monkeypatch):
 
 def test_import_avec_cle_remplit_la_fiche(monkeypatch):
     preparer_faux(monkeypatch)
-    monkeypatch.setattr(main.config, "cle_claude_presente", lambda: True)
-    monkeypatch.setattr(main.structuration, "structurer", lambda *a: FICHE)
-    monkeypatch.setattr(main.structuration, "adapter", lambda r: ADAPTATIONS)
-    rep = client.post("/api/importer", json={"url": "https://www.tiktok.com/@chef/video/2"})
+    monkeypatch.setattr(main.config, "disponible", lambda mode: mode in ("api", "abonnement"))
+    modes = []
+    monkeypatch.setattr(main.structuration, "structurer", lambda *a: modes.append(a[-1]) or FICHE)
+    monkeypatch.setattr(main.structuration, "adapter", lambda r, mode: modes.append(mode) or ADAPTATIONS)
+    rep = client.post("/api/importer", json={"url": "https://www.tiktok.com/@chef/video/2", "mode": "abonnement"})
     recette = client.get(f"/api/recettes/{rep.json()['id']}").json()
     assert recette["statut"] == "pret"
     assert recette["adaptations"]["thermomix"]["faisable"] == "oui"
+    assert modes == ["abonnement", "abonnement"]
     assert recette["titre"] == "Pâtes au citron"
     assert recette["tags"] == ["rapide", "végétarien"]
     assert len(recette["ingredients"]) == 2
@@ -147,11 +149,13 @@ def test_structurer_appelle_claude(monkeypatch, tmp_path):
 def test_adapter_appareils(monkeypatch):
     r = client.post("/api/recettes", json={"titre": "Pâtes", "portions": "2 personnes",
                                            "ingredients": [{"quantite": "200", "unite": "g", "nom": "spaghetti"}]}).json()
-    assert client.post(f"/api/recettes/{r['id']}/adapter").status_code == 400  # pas de clé
-    monkeypatch.setattr(main.config, "cle_claude_presente", lambda: True)
+    assert client.post(f"/api/recettes/{r['id']}/adapter").status_code == 400  # aucun mode choisi
+    assert client.post(f"/api/recettes/{r['id']}/adapter", params={"mode": "api"}).status_code == 400  # pas de clé
+    monkeypatch.setattr(main.config, "disponible", lambda mode: True)
     recu = {}
-    monkeypatch.setattr(main.structuration, "adapter", lambda rec: recu.update(rec) or ADAPTATIONS)
-    maj = client.post(f"/api/recettes/{r['id']}/adapter").json()
+    monkeypatch.setattr(main.structuration, "adapter", lambda rec, mode: recu.update(rec, mode=mode) or ADAPTATIONS)
+    maj = client.post(f"/api/recettes/{r['id']}/adapter", params={"mode": "api"}).json()
+    assert recu["mode"] == "api"
     assert recu["titre"] == "Pâtes"
     assert maj["adaptations"]["portions"] == 4
     assert client.get(f"/api/recettes/{r['id']}").json()["adaptations"]["airfryer"]["faisable"] == "non"
@@ -159,7 +163,7 @@ def test_adapter_appareils(monkeypatch):
 
 def test_consignes_adaptation(monkeypatch):
     envoye = {}
-    monkeypatch.setattr(structuration, "_appeler_claude", lambda texte, schema: envoye.update(c=texte, s=schema) or ADAPTATIONS)
+    monkeypatch.setattr(structuration, "_appeler_claude", lambda texte, schema, mode=None: envoye.update(c=texte, s=schema) or ADAPTATIONS)
     structuration.adapter({"titre": "Pâtes", "portions": "2 personnes", "etapes": ["Cuire"],
                            "ingredients": [{"quantite": "200", "unite": "g", "nom": "spaghetti"}]})
     texte = envoye["c"]
@@ -169,15 +173,15 @@ def test_consignes_adaptation(monkeypatch):
 
 
 def test_reglages_depuis_l_appli():
-    assert client.get("/api/reglages").json()["mode"] == "api"
+    assert client.get("/api/reglages").json()["cle_api"] == ""
     assert client.put("/api/reglages", json={"cle_api": "mauvaise"}).status_code == 400
-    r = client.put("/api/reglages", json={"mode": "abonnement", "cle_api": "sk-ant-api03-abcdefghijklmnop1234"}).json()
-    assert r["mode"] == "abonnement" and r["cle_api"].startswith("sk-ant-api") and "1234" in r["cle_api"]
+    r = client.put("/api/reglages", json={"cle_api": "sk-ant-api03-abcdefghijklmnop1234"}).json()
+    assert r["cle_api"].startswith("sk-ant-api") and "1234" in r["cle_api"]
     assert main.config.cle_api() == "sk-ant-api03-abcdefghijklmnop1234"
-    r = client.put("/api/reglages", json={"mode": "manuel", "effacer_cle": True}).json()
-    assert r["mode"] == "manuel" and r["cle_api"] == ""
-    assert client.get("/api/etat").json()["cle_claude"] is False
-    client.put("/api/reglages", json={"mode": "api"})
+    assert client.get("/api/etat").json()["api"] is True
+    r = client.put("/api/reglages", json={"effacer_cle": True}).json()
+    assert r["cle_api"] == ""
+    assert client.get("/api/etat").json()["api"] is False
 
 
 def test_mode_manuel_aller_retour():

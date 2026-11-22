@@ -59,6 +59,15 @@ def initialiser() -> None:
         colonnes = {l["name"] for l in con.execute("PRAGMA table_info(recettes)")}
         if "adaptations" not in colonnes:
             con.execute("ALTER TABLE recettes ADD COLUMN adaptations TEXT DEFAULT '{}'")
+        # Un traitement coupé par la fermeture de l'appli ne doit pas rester "en cours" pour toujours.
+        con.execute("""
+            UPDATE recettes SET progression = '',
+                statut = CASE WHEN ingredients NOT IN ('', '[]') THEN 'pret'
+                              WHEN legende != '' OR transcription != '' THEN 'brouillon'
+                              ELSE 'erreur' END,
+                erreur = 'Traitement interrompu par la fermeture de l''appli. Relance-le si besoin.'
+            WHERE statut = 'en_cours'
+        """)
 
 
 def _vers_dict(ligne: sqlite3.Row) -> dict:

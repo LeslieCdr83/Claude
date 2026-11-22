@@ -1,11 +1,6 @@
 # Copie ce fichier sous le nom reglages.txt puis remplis les valeurs.
 
-# Utilisation de Claude : "abonnement" (Claude Code connecté à ton compte Claude Pro ou Max,
-# sans jetons facturés) ou "api" (clé payante ci-dessous). Vide : clé API si présente, sinon abonnement.
-MODE_CLAUDE=
-
-# Clé API Claude (https://console.anthropic.com). Sans clé, l'import garde
-# la légende, la transcription et les captures, sans rédiger la fiche.
+# Clé API Claude (https://console.anthropic.com). Plus simple : saisis-la dans la page Réglages de l'appli.
 ANTHROPIC_API_KEY=
 
 # Modèle de transcription locale : tiny, base, small (conseillé), medium.

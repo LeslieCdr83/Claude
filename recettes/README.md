@@ -29,7 +29,7 @@ Le premier import télécharge aussi le modèle de transcription (environ 500 Mo
 
 ## Connecter Claude
 
-L'appli a besoin de Claude pour rédiger les fiches. Choisis le mode sur la page Réglages de l'appli (icône ⚙ en haut à droite). Le bouton « Tester la connexion » vérifie que tout marche.
+L'appli a besoin de Claude pour rédiger les fiches. Tu choisis à chaque fois : l'encart d'import, la fiche et l'encart Thermomix et airfryer ont un bouton par mode. L'appli met en avant le dernier mode utilisé. Un bouton grisé indique un mode pas encore configuré. La page Réglages (icône ⚙) sert à enregistrer la clé API et à tester chaque mode.
 
 | Mode | Coût | Fonctionnement |
 |---|---|---|
@@ -39,7 +39,7 @@ L'appli a besoin de Claude pour rédiger les fiches. Choisis le mode sur la page
 
 ### Mode manuel
 
-Sur une recette, clique sur « Analyser avec l'appli Claude ». L'appli prépare la demande :
+Importe la vidéo avec « Sans analyse », puis clique sur « Appli Claude (copier-coller) » sur la fiche. L'appli prépare la demande :
 
 1. Clique sur « Copier la demande ».
 2. Colle-la dans une nouvelle conversation de l'appli Claude ou de claude.ai. Joins les captures de la vidéo pour que Claude lise les quantités affichées à l'écran.
@@ -64,7 +64,7 @@ curl -fsSL https://claude.ai/install.sh | bash
 ```
 
 2. Ferme le terminal, ouvre-en un nouveau et tape `claude`. Choisis la connexion avec ton compte Claude et valide dans le navigateur. Tape ensuite `/exit`.
-3. Relance l'appli, ouvre Réglages, choisis « Abonnement Claude » et clique sur « Tester la connexion ».
+3. Relance l'appli. Le bouton « Claude Code » devient actif. Réglages propose « Tester Claude Code ».
 
 Une analyse prend 20 à 40 secondes, l'adaptation TM7 et Ninja autant.
 
@@ -72,13 +72,13 @@ Une analyse prend 20 à 40 secondes, l'adaptation TM7 et Ninja autant.
 
 1. Crée un compte sur https://console.anthropic.com et ajoute quelques dollars de crédit.
 2. Crée une clé API.
-3. Dans Réglages, choisis « Clé API Claude », colle la clé et clique sur « Enregistrer ».
+3. Dans Réglages, colle la clé et clique sur « Enregistrer ». Le bouton « API Claude » devient actif.
 
 Coût estimé : 3 à 8 centimes par recette avec Claude Opus 5.5 (4 $ par million de jetons en entrée, 20 $ en sortie, d'après la grille tarifaire d'Anthropic), plus 2 à 4 centimes pour l'adaptation aux appareils. Pour réduire le coût, ajoute la ligne `MODELE_CLAUDE=claude-haiku-5-5` dans `reglages.txt`.
 
 ### Sans Claude
 
-L'import marche quand même. La recette reste en brouillon avec la légende, la transcription et les captures. Une fois Claude connecté, ouvre le brouillon et clique sur « Analyser avec Claude ».
+Le bouton « Sans analyse » importe la vidéo en brouillon, avec la légende, la transcription et les captures. Tu choisis plus tard comment rédiger la fiche.
 
 ## Portions et appareils
 
