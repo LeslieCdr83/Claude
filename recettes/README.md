@@ -106,6 +106,8 @@ Le tirage se fait dans l'appli, sans Claude : il est gratuit et immédiat.
 
 Sur une fiche, le bouton « Coller un JSON Claude » accepte une fiche complète ou une version TM7 et Ninja. L'appli reconnaît le type. Les champs absents gardent leur valeur : tu peux coller seulement les ingrédients ou seulement les étapes. La page « + » (nouvelle recette) permet aussi de créer une recette à partir d'un JSON.
 
+Pour créer une recette à partir d'un simple titre avec ChatGPT (ou Claude), copie le texte de `prompts/chatgpt-recette-depuis-titre.txt`, remplace `[ÉCRIS LE TITRE ICI]` par le nom du plat, puis colle la réponse dans la page « + », section « Créer à partir d'un JSON Claude ».
+
 ## Leclerc Drive
 
 Leclerc Drive ne permet pas à une autre appli de remplir ton panier. L'appli t'aide autrement : dans la liste de courses, 🛒 ouvre la recherche du produit dans ton magasin, et la ligne se coche. Tu choisis le produit et tu l'ajoutes au panier.
