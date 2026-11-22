@@ -6,7 +6,8 @@ RACINE = Path(__file__).resolve().parent.parent
 
 
 def _charger_env() -> None:
-    for nom in ("reglages.txt", ".env"):
+    # Windows masque les extensions : "reglages.txt" devient souvent "reglages.txt.txt".
+    for nom in ("reglages.txt", "reglages.txt.txt", "reglages", ".env"):
         fichier = RACINE / nom
         if fichier.exists():
             _lire(fichier)

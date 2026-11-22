@@ -166,6 +166,9 @@ async function lancerImport(texte) {
 }
 
 // ---------- Fiche ----------
+// Message gardé d'un import fait avant l'ajout de la clé.
+const cleAjoutee = (r) => etat.cle_claude && r.statut === "brouillon" && (r.erreur || "").startsWith("Pas de clé Claude");
+
 async function vueRecette(id) {
   let r;
   try { r = await api(`/api/recettes/${id}`); } catch (err) { vue.innerHTML = `<p class="vide">${echap(err.message)}</p>`; return; }
@@ -189,7 +192,7 @@ async function vueRecette(id) {
     ? `<button id="b-analyser" ${etat.cle_claude ? "" : "disabled title='Ajoute une clé Claude'"}>${r.statut === "pret" ? "Réanalyser" : "Analyser avec Claude"}</button>` : "";
 
   vue.innerHTML = `
-    ${r.erreur ? `<p class="alerte">${echap(r.erreur)}</p>` : ""}
+    ${r.erreur ? `<p class="alerte">${echap(cleAjoutee(r) ? "Clé Claude détectée. Clique sur « Analyser avec Claude » pour rédiger la fiche de cette recette." : r.erreur)}</p>` : ""}
     <div class="fiche-entete">
       <img src="${imageRecette(r)}" alt="">
       <div>

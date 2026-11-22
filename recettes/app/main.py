@@ -16,6 +16,9 @@ STATIC = Path(__file__).parent / "static"
 
 app = FastAPI(title="Mes recettes")
 db.initialiser()
+print("", flush=True)
+print("Clé Claude : " + ("détectée" if config.cle_claude_presente() else
+      "absente. Vérifie le fichier reglages.txt dans le dossier recettes."), flush=True)
 
 
 class Import(BaseModel):
