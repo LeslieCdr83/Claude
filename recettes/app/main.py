@@ -308,13 +308,19 @@ def reponse_manuelle(recette_id: int, donnees: ReponseManuelle):
     recette = db.lire(recette_id)
     if not recette:
         raise HTTPException(404, "Recette introuvable.")
-    if donnees.type not in structuration.SCHEMAS:
+    if donnees.type not in (*structuration.SCHEMAS, "auto"):
         raise HTTPException(400, "Type de réponse inconnu.")
+    defauts = {
+        "fiche": {"est_une_recette": True, **{c: recette[c] or ([] if c in ("ingredients", "etapes", "tags") else "")
+                  for c in ("titre", "portions", "temps_preparation", "temps_cuisson",
+                            "ingredients", "etapes", "tags", "notes")}},
+        "adaptation": recette["adaptations"] or {},
+    }
     try:
-        resultat = structuration.lire_reponse_manuelle(donnees.type, donnees.texte)
+        type_reponse, resultat = structuration.lire_reponse_manuelle(donnees.type, donnees.texte, defauts)
     except structuration.ErreurStructuration as exc:
         raise HTTPException(400, str(exc)) from exc
-    if donnees.type == "fiche":
+    if type_reponse == "fiche":
         _appliquer_fiche(recette_id, resultat, recette["titre"] or "")
     else:
         db.mettre_a_jour(recette_id, adaptations=resultat)

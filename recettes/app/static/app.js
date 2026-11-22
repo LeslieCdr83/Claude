@@ -259,6 +259,7 @@ async function vueRecette(id) {
           <button id="b-favori">${r.favori ? "❤️ Favori" : "🤍 Favori"}</button>
           <button id="b-panier">${dansPanier ? "✓ Dans les courses" : "🛒 Ajouter aux courses"}</button>
           <a class="bouton" href="#/recette/${r.id}/modifier">Modifier</a>
+          <button id="b-coller">Coller un JSON Claude</button>
           ${r.statut === "erreur" ? `<button id="b-reimporter" class="principal">Réessayer l'import</button>` : ""}
           <button id="b-imprimer">Imprimer</button>
           <button id="b-supprimer" class="danger">Supprimer</button>
@@ -332,6 +333,7 @@ async function vueRecette(id) {
     routeur();
   };
   document.getElementById("b-imprimer").onclick = () => window.print();
+  document.getElementById("b-coller").onclick = () => ouvrirCollage(r);
   document.getElementById("b-supprimer").onclick = async () => {
     if (!confirm("Supprimer cette recette ?")) return;
     await api(`/api/recettes/${r.id}`, { method: "DELETE" });
@@ -453,6 +455,47 @@ async function ouvrirManuel(r, type) {
   };
 }
 
+// ---------- Coller un JSON Claude sur une recette existante ----------
+const AIDE_JSON = "Colle une fiche ou une version TM7 et Ninja. L'appli reconnaît le type. Les champs absents gardent leur valeur actuelle : tu peux coller seulement les ingrédients, par exemple.";
+
+async function enregistrerJson(id, texte) {
+  if (!texte.trim()) throw new Error("Colle d'abord le JSON de Claude.");
+  return api(`/api/recettes/${id}/reponse`, { method: "POST", body: { type: "auto", texte } });
+}
+
+function ouvrirCollage(r) {
+  const zone = document.getElementById("manuel");
+  zone.hidden = false;
+  zone.innerHTML = `
+    <h2>Coller un JSON Claude <button id="c-fermer" aria-label="Fermer">✕</button></h2>
+    <p class="aide">${AIDE_JSON}</p>
+    <textarea id="c-json" rows="10" placeholder='{"ingredients": [...], "etapes": [...]}'></textarea>
+    <div class="actions"><button class="principal" id="c-valider">Mettre à jour la recette</button></div>
+    <details><summary>Besoin d'une demande à donner à Claude ?</summary>
+      <p class="aide">Copie la demande, colle-la dans Claude avec tes corrections (par exemple « mets 6 personnes »), puis recolle sa réponse ci-dessus.</p>
+      <div class="actions">
+        <button data-demande="fiche">Copier la demande pour la fiche</button>
+        <button data-demande="adaptation">Copier la demande TM7 et Ninja</button>
+      </div>
+    </details>`;
+  zone.scrollIntoView({ behavior: "smooth", block: "start" });
+  document.getElementById("c-fermer").onclick = () => { zone.hidden = true; zone.innerHTML = ""; };
+  document.getElementById("c-valider").onclick = async () => {
+    try {
+      await enregistrerJson(r.id, document.getElementById("c-json").value);
+      toast("Recette mise à jour.");
+      routeur();
+    } catch (err) { toast(err.message); }
+  };
+  zone.querySelectorAll("[data-demande]").forEach((b) => b.onclick = async () => {
+    try {
+      const d = await api(`/api/recettes/${r.id}/demande?type=${b.dataset.demande}`);
+      await navigator.clipboard.writeText(d.texte);
+      toast("Demande copiée. Colle-la dans Claude.");
+    } catch (err) { toast(err.message || "Copie impossible sur ce navigateur."); }
+  });
+}
+
 // ---------- Réglages ----------
 async function vueReglages() {
   const r = await api("/api/reglages");
@@ -517,6 +560,13 @@ async function vueEdition(id) {
   const etapes = r.etapes.length ? [...r.etapes] : [""];
 
   vue.innerHTML = `
+    <section class="bloc">
+      <details id="d-json"><summary>${id ? "Mettre à jour avec un JSON Claude" : "Créer à partir d'un JSON Claude"}</summary>
+        <p class="aide">${AIDE_JSON}</p>
+        <textarea id="e-json" rows="8" placeholder='{"titre": "...", "ingredients": [...]}'></textarea>
+        <div class="actions"><button class="principal" id="e-valider">${id ? "Mettre à jour la recette" : "Créer la recette"}</button></div>
+      </details>
+    </section>
     <form class="formulaire bloc" id="form-edition">
       <h2>${id ? "Modifier la recette" : "Nouvelle recette"}</h2>
       <label for="f-titre">Titre</label>
@@ -571,6 +621,21 @@ async function vueEdition(id) {
   dessiner();
   document.getElementById("ajout-ingr").onclick = () => { ingr.splice(0, ingr.length, ...lireIngr(), { quantite: "", unite: "", nom: "" }); dessiner(); };
   document.getElementById("ajout-etape").onclick = () => { etapes.splice(0, etapes.length, ...lireEtapes(), ""); dessiner(); };
+
+  document.getElementById("e-valider").onclick = async () => {
+    const texte = document.getElementById("e-json").value;
+    let nouvel = null;
+    try {
+      if (!texte.trim()) throw new Error("Colle d'abord le JSON de Claude.");
+      const cible = id || (nouvel = await api("/api/recettes", { method: "POST", body: { titre: "Nouvelle recette" } })).id;
+      await enregistrerJson(cible, texte);
+      toast(id ? "Recette mise à jour." : "Recette créée.");
+      location.hash = `#/recette/${cible}`;
+    } catch (err) {
+      if (nouvel) await api(`/api/recettes/${nouvel.id}`, { method: "DELETE" }).catch(() => {});
+      toast(err.message);
+    }
+  };
 
   document.getElementById("form-edition").addEventListener("submit", async (e) => {
     e.preventDefault();

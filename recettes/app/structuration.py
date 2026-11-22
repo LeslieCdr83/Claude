@@ -309,17 +309,34 @@ def demande_manuelle(type_demande: str, recette: dict) -> str:
             f"sans texte avant ni après :\n{schema}")
 
 
-def lire_reponse_manuelle(type_demande: str, texte: str) -> dict:
-    """Extrait le JSON de la réponse collée (avec ou sans bloc ```json) et le vérifie."""
+def extraire_json(texte: str) -> dict:
+    """Trouve l'objet JSON dans un texte collé, avec ou sans bloc ```json autour."""
     texte = (texte or "").strip()
     debut, fin = texte.find("{"), texte.rfind("}")
     if debut < 0 or fin <= debut:
-        raise ErreurStructuration("Aucun objet JSON trouvé dans la réponse collée.")
+        raise ErreurStructuration("Aucun objet JSON trouvé dans le texte collé.")
     try:
         donnees = json.loads(texte[debut:fin + 1])
     except json.JSONDecodeError as exc:
         raise ErreurStructuration(f"JSON invalide : {exc.msg}, ligne {exc.lineno}.") from exc
-    return valider(donnees, SCHEMAS[type_demande])
+    if not isinstance(donnees, dict):
+        raise ErreurStructuration("Le JSON doit être un objet entre accolades { }.")
+    return donnees
+
+
+def detecter_type(donnees: dict) -> str:
+    """Un JSON avec "thermomix" ou "airfryer" est une adaptation. Sinon, c'est une fiche."""
+    return "adaptation" if ("thermomix" in donnees or "airfryer" in donnees) else "fiche"
+
+
+def lire_reponse_manuelle(type_demande: str, texte: str, defauts: dict | None = None) -> tuple[str, dict]:
+    """Vérifie le JSON collé. Les champs absents reprennent les valeurs actuelles (defauts),
+    ce qui permet de ne coller qu'une partie, par exemple seulement les ingrédients."""
+    donnees = extraire_json(texte)
+    if type_demande == "auto":
+        type_demande = detecter_type(donnees)
+    defauts = (defauts or {}).get(type_demande) or {}
+    return type_demande, valider({**defauts, **donnees}, SCHEMAS[type_demande])
 
 
 def valider(valeur, schema: dict, chemin: str = "réponse"):

@@ -191,9 +191,9 @@ def test_mode_manuel_aller_retour():
     assert "200 g de riz" in demande["texte"] and '"est_une_recette"' in demande["texte"]
 
     assert client.post(f"/api/recettes/{r['id']}/reponse", json={"type": "fiche", "texte": "désolé"}).status_code == 400
-    incomplet = json.dumps({"titre": "Riz"})
-    rep = client.post(f"/api/recettes/{r['id']}/reponse", json={"type": "fiche", "texte": incomplet})
-    assert rep.status_code == 400 and "manquant" in rep.json()["detail"]
+    mauvais = json.dumps({"ingredients": "pas une liste"})
+    rep = client.post(f"/api/recettes/{r['id']}/reponse", json={"type": "fiche", "texte": mauvais})
+    assert rep.status_code == 400 and "liste attendue" in rep.json()["detail"]
 
     colle = "Voici la fiche :\n```json\n" + json.dumps({**FICHE, "titre": "Riz nature", "en_trop": 1}) + "\n```"
     fiche = client.post(f"/api/recettes/{r['id']}/reponse", json={"type": "fiche", "texte": colle}).json()
@@ -202,4 +202,20 @@ def test_mode_manuel_aller_retour():
     demande = client.get(f"/api/recettes/{r['id']}/demande", params={"type": "adaptation"}).json()
     assert "TM7" in demande["texte"]
     maj = client.post(f"/api/recettes/{r['id']}/reponse", json={"type": "adaptation", "texte": json.dumps(ADAPTATIONS)}).json()
+    assert maj["adaptations"]["thermomix"]["faisable"] == "oui"
+
+
+def test_coller_json_partiel_et_detection_du_type():
+    r = client.post("/api/recettes", json={"titre": "Soupe", "portions": "2 personnes",
+                                           "etapes": ["Mixer."], "tags": ["hiver"]}).json()
+    partiel = json.dumps({"ingredients": [{"quantite": "500", "unite": "g", "nom": "carottes"}]})
+    maj = client.post(f"/api/recettes/{r['id']}/reponse", json={"type": "auto", "texte": partiel}).json()
+    assert maj["titre"] == "Soupe" and maj["etapes"] == ["Mixer."] and maj["tags"] == ["hiver"]
+    assert maj["ingredients"][0]["nom"] == "carottes" and maj["ingredients"][0]["estimee"] is False
+
+    maj = client.post(f"/api/recettes/{r['id']}/reponse", json={"type": "auto", "texte": json.dumps(ADAPTATIONS)}).json()
+    assert maj["adaptations"]["thermomix"]["faisable"] == "oui" and maj["ingredients"][0]["nom"] == "carottes"
+    seul_ninja = json.dumps({"airfryer": {**APPAREIL, "resume": "Air Fry 180 °C"}})
+    maj = client.post(f"/api/recettes/{r['id']}/reponse", json={"type": "auto", "texte": seul_ninja}).json()
+    assert maj["adaptations"]["airfryer"]["resume"] == "Air Fry 180 °C"
     assert maj["adaptations"]["thermomix"]["faisable"] == "oui"
