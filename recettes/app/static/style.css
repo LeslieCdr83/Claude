@@ -173,3 +173,13 @@ details pre { white-space: pre-wrap; font-family: inherit; font-size: .9rem; col
 }
 .bloc .vide { padding: 0; text-align: left; }
 
+
+.onglets { display: flex; gap: 6px; margin-bottom: 12px; }
+.onglet { flex: 1; justify-content: center; font-size: .9rem; padding: 8px 10px; }
+.onglet.actif { background: var(--degrade); border-color: transparent; color: #fff; }
+.faisable { font-size: .8rem; font-weight: 700; border-radius: 99px; padding: 2px 10px; margin-right: 6px; background: var(--accent-clair); color: var(--accent); }
+.faisable.oui { background: #dcfce7; color: #166534; }
+.faisable.non { background: #fee2e2; color: #991b1b; }
+.etapes-appareil li { margin-bottom: 14px; }
+.reglages { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.reglage { font-size: .8rem; font-weight: 600; background: var(--accent-clair); color: var(--texte); border-radius: 8px; padding: 2px 8px; }

@@ -34,6 +34,15 @@ MODELE_WHISPER = os.environ.get("MODELE_WHISPER", "small")
 COOKIES = os.environ.get("COOKIES_FICHIER") or None
 
 MODELE_CLAUDE = os.environ.get("MODELE_CLAUDE", "claude-opus-5-5")
+# Modèle exact de ton airfryer, pour des réglages plus précis (ex. "Ninja Foodi Dual Zone AF400EU").
+# Nombre de personnes affiché par défaut sur chaque fiche.
+try:
+    PORTIONS_DEFAUT = max(1, int(os.environ.get("PORTIONS_DEFAUT") or 4))
+except ValueError:
+    PORTIONS_DEFAUT = 4
+# Rédige automatiquement les versions Thermomix et airfryer après chaque import.
+ADAPTATION_AUTO = (os.environ.get("ADAPTATION_AUTO") or "oui").strip().lower() not in ("non", "0", "false")
+MODELE_AIRFRYER = os.environ.get("MODELE_AIRFRYER") or "modèle non précisé, réglages valables pour la gamme Ninja"
 
 
 def _trouver_ffmpeg() -> str:

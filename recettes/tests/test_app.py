@@ -30,6 +30,12 @@ FICHE = {
 }
 
 
+APPAREIL = {"faisable": "oui", "explication": "", "resume": "15 min", "conseils": "",
+            "etapes": [{"instruction": "Mets l'eau", "mode": "", "temps": "10 min", "temperature": "100 °C", "vitesse": "1"}]}
+ADAPTATIONS = {"portions": 4, "ingredients": [{"quantite": "400", "unite": "g", "nom": "spaghetti"}],
+               "thermomix": APPAREIL, "airfryer": {**APPAREIL, "faisable": "non", "etapes": []}}
+
+
 def faux_telechargement(url, dossier):
     video = dossier / "media.00001.mp4"
     video.write_bytes(b"x")
@@ -68,9 +74,11 @@ def test_import_avec_cle_remplit_la_fiche(monkeypatch):
     preparer_faux(monkeypatch)
     monkeypatch.setattr(main.config, "cle_claude_presente", lambda: True)
     monkeypatch.setattr(main.structuration, "structurer", lambda *a: FICHE)
+    monkeypatch.setattr(main.structuration, "adapter", lambda r: ADAPTATIONS)
     rep = client.post("/api/importer", json={"url": "https://www.tiktok.com/@chef/video/2"})
     recette = client.get(f"/api/recettes/{rep.json()['id']}").json()
     assert recette["statut"] == "pret"
+    assert recette["adaptations"]["thermomix"]["faisable"] == "oui"
     assert recette["titre"] == "Pâtes au citron"
     assert recette["tags"] == ["rapide", "végétarien"]
     assert len(recette["ingredients"]) == 2
@@ -132,3 +140,27 @@ def test_structurer_appelle_claude(monkeypatch, tmp_path):
     contenu = appels["messages"][0]["content"]
     assert contenu[0]["type"] == "image" and contenu[0]["source"]["media_type"] == "image/jpeg"
     assert "<legende>" in contenu[-1]["text"]
+
+
+def test_adapter_appareils(monkeypatch):
+    r = client.post("/api/recettes", json={"titre": "Pâtes", "portions": "2 personnes",
+                                           "ingredients": [{"quantite": "200", "unite": "g", "nom": "spaghetti"}]}).json()
+    assert client.post(f"/api/recettes/{r['id']}/adapter").status_code == 400  # pas de clé
+    monkeypatch.setattr(main.config, "cle_claude_presente", lambda: True)
+    recu = {}
+    monkeypatch.setattr(main.structuration, "adapter", lambda rec: recu.update(rec) or ADAPTATIONS)
+    maj = client.post(f"/api/recettes/{r['id']}/adapter").json()
+    assert recu["titre"] == "Pâtes"
+    assert maj["adaptations"]["portions"] == 4
+    assert client.get(f"/api/recettes/{r['id']}").json()["adaptations"]["airfryer"]["faisable"] == "non"
+
+
+def test_consignes_adaptation(monkeypatch):
+    envoye = {}
+    monkeypatch.setattr(structuration, "_appeler_claude", lambda contenu, schema: envoye.update(c=contenu, s=schema) or ADAPTATIONS)
+    structuration.adapter({"titre": "Pâtes", "portions": "2 personnes", "etapes": ["Cuire"],
+                           "ingredients": [{"quantite": "200", "unite": "g", "nom": "spaghetti"}]})
+    texte = envoye["c"][0]["text"]
+    assert "pour 4 personnes" in texte and "TM7" in texte and "Ninja" in texte
+    assert "- 200 g spaghetti" in texte and "{" not in texte.split("<recette>")[0]
+    assert envoye["s"] is structuration.SCHEMA_ADAPTATIONS

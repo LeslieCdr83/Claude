@@ -52,15 +52,20 @@ function formater(n) {
   if (Math.abs(n - Math.round(n)) < 0.05) return String(Math.round(n));
   return (Math.round(n * 10) / 10).toString().replace(".", ",");
 }
-function ajuster(qte, facteur) {
+// Sans unité (œufs, citrons...) : nombre entier, ou demi en dessous de 1.
+function arrondir(n, unite) {
+  if (unite) return n;
+  return n < 1 ? Math.max(0.5, Math.round(n * 2) / 2) : Math.round(n);
+}
+function ajuster(qte, facteur, unite = "x") {
   if (!qte || facteur === 1) return qte || "";
   const plage = String(qte).match(/^([\d.,/ ]+)\s*-\s*([\d.,/ ]+)$/);
   if (plage) {
     const a = versNombre(plage[1]), b = versNombre(plage[2]);
-    if (a != null && b != null) return `${formater(a * facteur)}-${formater(b * facteur)}`;
+    if (a != null && b != null) return `${formater(arrondir(a * facteur, unite))}-${formater(arrondir(b * facteur, unite))}`;
   }
   const n = versNombre(qte);
-  return n == null ? qte : formater(n * facteur);
+  return n == null ? qte : formater(arrondir(n * facteur, unite));
 }
 const nombrePortions = (p) => { const m = String(p || "").match(/\d+/); return m ? +m[0] : null; };
 
@@ -180,7 +185,7 @@ async function vueRecette(id) {
   }
 
   const base = nombrePortions(r.portions);
-  let portions = base;
+  let portions = base ? (etat.portions_defaut || base) : base;
   const dansPanier = panier().some((p) => p.id === r.id);
   const chiffres = [
     r.portions && `🍽 ${r.portions}`,
@@ -215,8 +220,9 @@ async function vueRecette(id) {
 
     <section class="bloc">
       <h2>Ingrédients
-        ${base ? `<span class="portions"><button id="moins" aria-label="Moins de portions">−</button><span id="nb-portions">${base}</span> pers.<button id="plus" aria-label="Plus de portions">+</button></span>` : ""}
+        ${base ? `<span class="portions"><button id="moins" aria-label="Moins de portions">−</button><span id="nb-portions">${portions}</span> pers.<button id="plus" aria-label="Plus de portions">+</button></span>` : ""}
       </h2>
+      ${base ? `<p class="aide" id="origine"></p>` : `<p class="aide">Nombre de personnes inconnu : quantités de la vidéo.</p>`}
       <ul class="ingredients" id="ingredients"></ul>
     </section>
 
@@ -224,6 +230,8 @@ async function vueRecette(id) {
       <h2>Étapes</h2>
       ${r.etapes.length ? `<ol class="etapes">${r.etapes.map((e) => `<li>${echap(e)}</li>`).join("")}</ol>` : `<p class="vide">Aucune étape pour l'instant.</p>`}
     </section>
+
+    <section class="bloc" id="appareils"></section>
 
     ${r.notes ? `<section class="bloc"><h2>Notes</h2><p>${echap(r.notes).replace(/\n/g, "<br>")}</p></section>` : ""}
 
@@ -236,12 +244,14 @@ async function vueRecette(id) {
   const coches = lireStock(`coches-${r.id}`, []);
   function dessinerIngredients() {
     const facteur = base && portions ? portions / base : 1;
+    const origine = document.getElementById("origine");
+    if (origine) origine.textContent = portions === base ? "Quantités de la recette d'origine." : `Quantités recalculées. Recette d'origine : ${r.portions}.`;
     const ul = document.getElementById("ingredients");
     if (!r.ingredients.length) { ul.innerHTML = `<li class="vide">Aucun ingrédient pour l'instant.</li>`; return; }
     ul.innerHTML = r.ingredients.map((i, n) => `
       <li><label class="${coches.includes(n) ? "coche" : ""}">
         <input type="checkbox" data-n="${n}" ${coches.includes(n) ? "checked" : ""}>
-        <span class="qte">${echap([ajuster(i.quantite, facteur), i.unite].filter(Boolean).join(" "))}</span>
+        <span class="qte">${echap([ajuster(i.quantite, facteur, i.unite), i.unite].filter(Boolean).join(" "))}</span>
         <span>${echap(i.nom)}</span>
       </label></li>`).join("");
     ul.querySelectorAll("input").forEach((c) => c.addEventListener("change", () => {
@@ -253,6 +263,7 @@ async function vueRecette(id) {
     }));
   }
   dessinerIngredients();
+  dessinerAppareils(r);
 
   if (base) {
     const maj = (d) => { portions = Math.max(1, portions + d); document.getElementById("nb-portions").textContent = portions; dessinerIngredients(); };
@@ -282,6 +293,61 @@ async function vueRecette(id) {
   };
   const br = document.getElementById("b-reimporter");
   if (br) br.onclick = async () => { await api(`/api/recettes/${r.id}/reimporter`, { method: "POST" }); routeur(); };
+}
+
+// ---------- Thermomix et airfryer ----------
+const APPAREILS = [
+  { cle: "thermomix", nom: "Thermomix TM7" },
+  { cle: "airfryer", nom: "Airfryer Ninja" },
+];
+const FAISABLE = { oui: "Faisable", partiel: "En partie", non: "Pas adapté" };
+
+function dessinerAppareils(r, onglet = "thermomix") {
+  const zone = document.getElementById("appareils");
+  if (!zone) return;
+  const a = r.adaptations || {};
+  if (!a.thermomix) {
+    const possible = r.ingredients.length || r.etapes.length;
+    zone.innerHTML = `
+      <h2>Thermomix TM7 et airfryer Ninja</h2>
+      <p class="aide">Claude rédige les deux versions pour ${etat.portions_defaut || 4} personnes, avec les réglages de chaque appareil.</p>
+      <div class="actions"><button class="principal" id="b-adapter" ${etat.cle_claude && possible ? "" : "disabled"}>Adapter la recette</button></div>
+      ${etat.cle_claude ? "" : `<p class="aide">Ajoute une clé Claude pour utiliser cette fonction.</p>`}`;
+  } else {
+    const ap = a[onglet] || {};
+    const pastille = (v, icone) => v ? `<span class="reglage">${icone} ${echap(v)}</span>` : "";
+    zone.innerHTML = `
+      <h2>Avec un appareil</h2>
+      <div class="onglets" role="tablist">
+        ${APPAREILS.map((x) => `<button role="tab" class="onglet ${x.cle === onglet ? "actif" : ""}" data-onglet="${x.cle}" aria-selected="${x.cle === onglet}">${x.nom}</button>`).join("")}
+      </div>
+      <p><span class="faisable ${echap(ap.faisable)}">${FAISABLE[ap.faisable] || ""}</span> ${echap(ap.resume || "")}</p>
+      ${ap.explication ? `<p class="aide">${echap(ap.explication)}</p>` : ""}
+      ${a.ingredients && a.ingredients.length && ap.faisable !== "non" ? `
+        <details><summary>Ingrédients pour ${echap(a.portions)} personnes</summary>
+          <ul class="ingredients">${a.ingredients.map((i) => `<li><span class="qte">${echap([i.quantite, i.unite].filter(Boolean).join(" "))}</span><span>${echap(i.nom)}</span></li>`).join("")}</ul>
+        </details>` : ""}
+      ${(ap.etapes || []).length ? `<ol class="etapes etapes-appareil">${ap.etapes.map((e) => `
+        <li>${echap(e.instruction)}
+          <div class="reglages">${pastille(e.mode, "⚙️")}${pastille(e.temps, "⏱")}${pastille(e.temperature, "🌡")}${pastille(e.vitesse, "🌀")}</div>
+        </li>`).join("")}</ol>` : ""}
+      ${ap.conseils ? `<p class="aide">💡 ${echap(ap.conseils)}</p>` : ""}
+      <div class="actions"><button id="b-adapter" ${etat.cle_claude ? "" : "disabled"}>Régénérer</button></div>`;
+    zone.querySelectorAll("[data-onglet]").forEach((b) => b.onclick = () => dessinerAppareils(r, b.dataset.onglet));
+  }
+  const bouton = document.getElementById("b-adapter");
+  if (bouton) bouton.onclick = async () => {
+    bouton.disabled = true;
+    bouton.innerHTML = `<span class="chargement"></span> Adaptation en cours, 20 à 60 s`;
+    try {
+      const maj = await api(`/api/recettes/${r.id}/adapter`, { method: "POST" });
+      r.adaptations = maj.adaptations;
+      dessinerAppareils(r, onglet);
+    } catch (err) {
+      toast(err.message);
+      dessinerAppareils(r, onglet);
+    }
+  };
 }
 
 // ---------- Édition ----------

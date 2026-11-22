@@ -128,6 +128,14 @@ def analyser(recette_id: int) -> None:
         images = [config.DOSSIER_IMAGES / chemin for chemin in recette["images"]]
         fiche = structuration.structurer(recette["titre"] or "", recette["legende"], recette["transcription"], images)
         _appliquer_fiche(recette_id, fiche, recette["titre"] or "")
+        recette = db.lire(recette_id)
+        if config.ADAPTATION_AUTO and recette["statut"] == "pret":
+            db.mettre_a_jour(recette_id, statut="en_cours", progression="Adaptation Thermomix et airfryer")
+            try:
+                db.mettre_a_jour(recette_id, adaptations=structuration.adapter(recette))
+            except Exception:
+                traceback.print_exc()  # la fiche reste utilisable, l'encart propose de réessayer
+            db.mettre_a_jour(recette_id, statut="pret", progression="")
     except Exception as exc:
         traceback.print_exc()
         db.mettre_a_jour(recette_id, statut="brouillon", progression="", erreur=str(exc)[:500])
@@ -135,7 +143,8 @@ def analyser(recette_id: int) -> None:
 
 @app.get("/api/etat")
 def etat():
-    return {"cle_claude": config.cle_claude_presente(), "modele_whisper": config.MODELE_WHISPER}
+    return {"cle_claude": config.cle_claude_presente(), "modele_whisper": config.MODELE_WHISPER,
+            "portions_defaut": config.PORTIONS_DEFAUT}
 
 
 @app.post("/api/importer")
@@ -197,6 +206,22 @@ def relancer_analyse(recette_id: int, taches: BackgroundTasks):
     db.mettre_a_jour(recette_id, statut="en_cours", progression="En attente", erreur="")
     taches.add_task(analyser, recette_id)
     return {"ok": True}
+
+
+@app.post("/api/recettes/{recette_id}/adapter")
+def adapter_appareils(recette_id: int):
+    """Version Thermomix TM7 et airfryer Ninja. Prend 20 à 60 secondes."""
+    recette = db.lire(recette_id)
+    if not recette:
+        raise HTTPException(404, "Recette introuvable.")
+    if not config.cle_claude_presente():
+        raise HTTPException(400, "Ajoute ta clé dans reglages.txt puis relance l'appli.")
+    try:
+        adaptations = structuration.adapter(recette)
+    except structuration.ErreurStructuration as exc:
+        raise HTTPException(502, str(exc)) from exc
+    db.mettre_a_jour(recette_id, adaptations=adaptations)
+    return db.lire(recette_id)
 
 
 @app.post("/api/recettes/{recette_id}/reimporter")

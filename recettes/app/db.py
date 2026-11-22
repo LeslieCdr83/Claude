@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS recettes (
     transcription TEXT DEFAULT '',
     miniature TEXT,
     images TEXT DEFAULT '[]',
+    adaptations TEXT DEFAULT '{}',
     favori INTEGER DEFAULT 0,
     statut TEXT DEFAULT 'en_cours',
     progression TEXT DEFAULT '',
@@ -54,12 +55,17 @@ def initialiser() -> None:
     config.DOSSIER_DONNEES.mkdir(parents=True, exist_ok=True)
     with connexion() as con:
         con.executescript(SCHEMA)
+        # Mise à jour des bases créées avant l'ajout d'une colonne.
+        colonnes = {l["name"] for l in con.execute("PRAGMA table_info(recettes)")}
+        if "adaptations" not in colonnes:
+            con.execute("ALTER TABLE recettes ADD COLUMN adaptations TEXT DEFAULT '{}'")
 
 
 def _vers_dict(ligne: sqlite3.Row) -> dict:
     d = dict(ligne)
     for champ in CHAMPS_JSON + ("images",):
         d[champ] = json.loads(d[champ] or "[]")
+    d["adaptations"] = json.loads(d.get("adaptations") or "{}")
     d["favori"] = bool(d["favori"])
     return d
 
@@ -69,6 +75,8 @@ def _serialiser(valeurs: dict) -> dict:
     for cle, val in valeurs.items():
         if cle in CHAMPS_JSON + ("images",):
             val = json.dumps(val or [], ensure_ascii=False)
+        elif cle == "adaptations":
+            val = json.dumps(val or {}, ensure_ascii=False)
         elif cle == "favori":
             val = int(bool(val))
         sortie[cle] = val
