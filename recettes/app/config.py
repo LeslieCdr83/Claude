@@ -59,8 +59,35 @@ def _trouver_ffmpeg() -> str:
 FFMPEG = _trouver_ffmpeg()
 
 
-def cle_claude_presente() -> bool:
+def cle_api_presente() -> bool:
     return bool(os.environ.get("ANTHROPIC_API_KEY"))
+
+
+def chemin_claude_code() -> str | None:
+    """Trouve la commande claude (Claude Code), y compris à son emplacement d'installation habituel."""
+    import shutil
+    # L'installation officielle place claude.exe dans ~/.local/bin : on la préfère à un éventuel claude.cmd.
+    for candidat in (Path.home() / ".local" / "bin" / "claude.exe", Path.home() / ".local" / "bin" / "claude"):
+        if candidat.exists():
+            return str(candidat)
+    return shutil.which("claude")
+
+
+def mode_claude() -> str:
+    """"api" (clé payante) ou "abonnement" (Claude Code connecté à ton compte Claude)."""
+    choix = (os.environ.get("MODE_CLAUDE") or "").strip().lower()
+    if choix in ("api", "abonnement"):
+        return choix
+    if cle_api_presente():
+        return "api"
+    return "abonnement" if chemin_claude_code() else "api"
+
+
+def cle_claude_presente() -> bool:
+    """Vrai si Claude est utilisable, par la clé API ou par l'abonnement."""
+    if mode_claude() == "abonnement":
+        return chemin_claude_code() is not None
+    return cle_api_presente()
 
 
 DOSSIER_IMAGES.mkdir(parents=True, exist_ok=True)

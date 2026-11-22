@@ -8,6 +8,7 @@ from types import SimpleNamespace
 DOSSIER_TEST = tempfile.mkdtemp()
 os.environ["RECETTES_DONNEES"] = DOSSIER_TEST
 os.environ.pop("ANTHROPIC_API_KEY", None)
+os.environ["MODE_CLAUDE"] = "api"
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient  # noqa: E402
@@ -132,7 +133,8 @@ def test_structurer_appelle_claude(monkeypatch, tmp_path):
 
     import anthropic
     monkeypatch.setattr(anthropic, "Anthropic", FauxClient)
-    monkeypatch.setattr(structuration.config, "cle_claude_presente", lambda: True)
+    monkeypatch.setattr(structuration.config, "cle_api_presente", lambda: True)
+    monkeypatch.setattr(structuration.config, "mode_claude", lambda: "api")
 
     fiche = structuration.structurer("Pasta", "légende", "voix", [image])
     assert fiche["titre"] == "Pâtes au citron"
@@ -157,10 +159,10 @@ def test_adapter_appareils(monkeypatch):
 
 def test_consignes_adaptation(monkeypatch):
     envoye = {}
-    monkeypatch.setattr(structuration, "_appeler_claude", lambda contenu, schema: envoye.update(c=contenu, s=schema) or ADAPTATIONS)
+    monkeypatch.setattr(structuration, "_appeler_claude", lambda texte, schema: envoye.update(c=texte, s=schema) or ADAPTATIONS)
     structuration.adapter({"titre": "Pâtes", "portions": "2 personnes", "etapes": ["Cuire"],
                            "ingredients": [{"quantite": "200", "unite": "g", "nom": "spaghetti"}]})
-    texte = envoye["c"][0]["text"]
+    texte = envoye["c"]
     assert "pour 4 personnes" in texte and "TM7" in texte and "Ninja" in texte
     assert "- 200 g spaghetti" in texte and "{" not in texte.split("<recette>")[0]
     assert envoye["s"] is structuration.SCHEMA_ADAPTATIONS

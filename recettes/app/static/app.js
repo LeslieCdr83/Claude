@@ -75,7 +75,7 @@ function imageRecette(r) {
 
 // ---------- Liste ----------
 async function vueListe() {
-  const alerte = etat.cle_claude ? "" : `<p class="alerte">Pas encore de clé Claude. L'import fonctionne déjà : il garde la vidéo, la légende et la transcription. Ajoute une clé (voir le README) pour obtenir la fiche complète.</p>`;
+  const alerte = etat.cle_claude ? "" : `<p class="alerte">Claude n'est pas encore connecté. L'import fonctionne déjà : il garde la vidéo, la légende et la transcription. Connecte Claude (abonnement ou clé, voir le README) pour obtenir la fiche complète.</p>`;
   vue.innerHTML = `
     <section class="import">
       <h2>Ajouter une recette</h2>
@@ -194,10 +194,10 @@ async function vueRecette(id) {
   ].filter(Boolean).map((c) => `<span>${echap(c)}</span>`).join("");
 
   const boutonAnalyser = r.source_url && (r.statut === "brouillon" || r.statut === "pret")
-    ? `<button id="b-analyser" ${etat.cle_claude ? "" : "disabled title='Ajoute une clé Claude'"}>${r.statut === "pret" ? "Réanalyser" : "Analyser avec Claude"}</button>` : "";
+    ? `<button id="b-analyser" ${etat.cle_claude ? "" : "disabled title='Connecte Claude (voir le README)'"}>${r.statut === "pret" ? "Réanalyser" : "Analyser avec Claude"}</button>` : "";
 
   vue.innerHTML = `
-    ${r.erreur ? `<p class="alerte">${echap(cleAjoutee(r) ? "Clé Claude détectée. Clique sur « Analyser avec Claude » pour rédiger la fiche de cette recette." : r.erreur)}</p>` : ""}
+    ${r.erreur ? `<p class="alerte">${echap(cleAjoutee(r) ? "Claude est connecté. Clique sur « Analyser avec Claude » pour rédiger la fiche de cette recette." : r.erreur)}</p>` : ""}
     <div class="fiche-entete">
       <img src="${imageRecette(r)}" alt="">
       <div>
@@ -312,7 +312,7 @@ function dessinerAppareils(r, onglet = "thermomix") {
       <h2>Thermomix TM7 et airfryer Ninja</h2>
       <p class="aide">Claude rédige les deux versions pour ${etat.portions_defaut || 4} personnes, avec les réglages de chaque appareil.</p>
       <div class="actions"><button class="principal" id="b-adapter" ${etat.cle_claude && possible ? "" : "disabled"}>Adapter la recette</button></div>
-      ${etat.cle_claude ? "" : `<p class="aide">Ajoute une clé Claude pour utiliser cette fonction.</p>`}`;
+      ${etat.cle_claude ? "" : `<p class="aide">Connecte Claude pour utiliser cette fonction (voir le README).</p>`}`;
   } else {
     const ap = a[onglet] || {};
     const pastille = (v, icone) => v ? `<span class="reglage">${icone} ${echap(v)}</span>` : "";

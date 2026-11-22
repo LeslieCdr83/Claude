@@ -17,8 +17,12 @@ STATIC = Path(__file__).parent / "static"
 app = FastAPI(title="Mes recettes")
 db.initialiser()
 print("", flush=True)
-print("Clé Claude : " + ("détectée" if config.cle_claude_presente() else
-      "absente. Vérifie le fichier reglages.txt dans le dossier recettes."), flush=True)
+if config.mode_claude() == "abonnement":
+    print("Claude : abonnement via Claude Code" if config.cle_claude_presente() else
+          "Claude : Claude Code introuvable. Installe-le (voir le README).", flush=True)
+else:
+    print("Clé Claude : " + ("détectée (API payante)" if config.cle_claude_presente() else
+          "absente. Vérifie le fichier reglages.txt dans le dossier recettes."), flush=True)
 
 
 class Import(BaseModel):

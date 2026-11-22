@@ -27,7 +27,33 @@ Le premier lancement installe tout, en 2 à 5 minutes. Le navigateur s'ouvre ens
 
 Le premier import télécharge aussi le modèle de transcription (environ 500 Mo). Les imports suivants prennent 30 secondes à 2 minutes.
 
-## Ajouter la clé Claude
+## Connecter Claude
+
+L'appli a besoin de Claude pour rédiger les fiches. Deux façons de faire :
+
+### Avec ton abonnement Claude (sans payer de jetons)
+
+Il faut un abonnement Claude Pro ou Max. Les analyses comptent dans les limites d'utilisation de ton abonnement, sans facture en plus.
+
+1. Installe Claude Code. Sur Windows, ouvre PowerShell et tape :
+
+```bash
+irm https://claude.ai/install.ps1 | iex
+```
+
+Sur Mac, ouvre Terminal et tape :
+
+```bash
+curl -fsSL https://claude.ai/install.sh | bash
+```
+
+2. Ferme le terminal, ouvre-en un nouveau et tape `claude`. Choisis la connexion avec ton compte Claude et valide dans le navigateur. Tape ensuite `/exit`.
+3. Si `reglages.txt` contient une clé après `ANTHROPIC_API_KEY=`, efface-la, ou ajoute la ligne `MODE_CLAUDE=abonnement`.
+4. Relance l'appli. La fenêtre noire affiche « Claude : abonnement via Claude Code ».
+
+Une analyse prend 20 à 40 secondes, l'adaptation TM7 et Ninja autant.
+
+### Avec une clé API (payante)
 
 1. Crée un compte sur https://console.anthropic.com et ajoute quelques dollars de crédit.
 2. Crée une clé API.
@@ -35,9 +61,11 @@ Le premier import télécharge aussi le modèle de transcription (environ 500 Mo
 4. Ouvre `reglages.txt` avec un éditeur de texte et colle ta clé après `ANTHROPIC_API_KEY=`.
 5. Ferme la fenêtre noire et relance l'appli.
 
-Sans clé, l'import marche déjà. La recette reste en brouillon avec la légende, la transcription et les captures. Une fois la clé ajoutée, ouvre le brouillon et clique sur « Analyser avec Claude ».
+Coût estimé : 3 à 8 centimes par recette avec Claude Opus 5.5 (4 $ par million de jetons en entrée, 20 $ en sortie, d'après la grille tarifaire d'Anthropic), plus 2 à 4 centimes pour l'adaptation aux appareils. Pour réduire le coût, ajoute la ligne `MODELE_CLAUDE=claude-haiku-5-5` dans `reglages.txt`.
 
-Coût estimé : 3 à 8 centimes par recette avec le modèle Claude Opus 5.5 (4 $ par million de jetons en entrée, 20 $ en sortie, d'après la grille tarifaire d'Anthropic). Pour réduire le coût, ajoute la ligne `MODELE_CLAUDE=claude-haiku-5-5` dans `reglages.txt`.
+### Sans Claude
+
+L'import marche quand même. La recette reste en brouillon avec la légende, la transcription et les captures. Une fois Claude connecté, ouvre le brouillon et clique sur « Analyser avec Claude ».
 
 ## Portions et appareils
 

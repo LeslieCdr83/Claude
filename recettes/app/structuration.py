@@ -69,26 +69,27 @@ def _bloc_image(chemin: Path) -> dict | None:
 
 def structurer(titre: str, legende: str, transcription: str, images: list[Path]) -> dict:
     """Appelle Claude et renvoie un dictionnaire conforme à SCHEMA_RECETTE."""
-    contenu: list[dict] = []
-    for chemin in images[:10]:
-        bloc = _bloc_image(chemin)
-        if bloc:
-            contenu.append(bloc)
-    contenu.append({
-        "type": "text",
-        "text": (f"{CONSIGNES}\n\n<titre>{titre}</titre>\n\n<legende>\n{legende or '(vide)'}\n</legende>\n\n"
-                 f"<transcription>\n{transcription or '(aucune voix détectée)'}\n</transcription>"),
-    })
-
-    return _appeler_claude(contenu, SCHEMA_RECETTE)
+    texte = (f"{CONSIGNES}\n\n<titre>{titre}</titre>\n\n<legende>\n{legende or '(vide)'}\n</legende>\n\n"
+             f"<transcription>\n{transcription or '(aucune voix détectée)'}\n</transcription>")
+    return _appeler_claude(texte, SCHEMA_RECETTE, images[:10])
 
 
-def _appeler_claude(contenu: list[dict], schema: dict) -> dict:
+def _appeler_claude(texte: str, schema: dict, images: list[Path] = ()) -> dict:
+    """Passe par l'abonnement Claude (Claude Code) ou par l'API, selon MODE_CLAUDE."""
+    images = [c for c in images if c.suffix.lower() in TYPES_IMAGE and c.exists()]
+    if config.mode_claude() == "abonnement":
+        return _appeler_abonnement(texte, schema, images)
+    return _appeler_api(texte, schema, images)
+
+
+def _appeler_api(texte: str, schema: dict, images: list[Path]) -> dict:
     import anthropic
 
-    if not config.cle_claude_presente():
+    if not config.cle_api_presente():
         raise ErreurStructuration("Aucune clé ANTHROPIC_API_KEY configurée.")
 
+    contenu = [b for b in (_bloc_image(c) for c in images) if b]
+    contenu.append({"type": "text", "text": texte})
     client = anthropic.Anthropic()
     try:
         reponse = client.beta.messages.create(
@@ -113,11 +114,60 @@ def _appeler_claude(contenu: list[dict], schema: dict) -> dict:
     if reponse.stop_reason == "max_tokens":
         raise ErreurStructuration("Réponse coupée : la recette est trop longue.")
 
-    texte = next((b.text for b in reponse.content if b.type == "text"), "")
+    sortie = next((b.text for b in reponse.content if b.type == "text"), "")
     try:
-        return json.loads(texte)
+        return json.loads(sortie)
     except json.JSONDecodeError as exc:
         raise ErreurStructuration("Réponse de Claude illisible.") from exc
+
+
+def _appeler_abonnement(texte: str, schema: dict, images: list[Path]) -> dict:
+    """Utilise Claude Code connecté à ton abonnement Claude : pas de jetons API facturés."""
+    import os
+    import subprocess
+
+    executable = config.chemin_claude_code()
+    if not executable:
+        raise ErreurStructuration("Claude Code est introuvable. Installe-le (voir le README) ou passe MODE_CLAUDE=api.")
+
+    if images:
+        texte += ("\n\nCaptures d'écran de la vidéo, à lire avec l'outil Read :\n"
+                  + "\n".join(str(c.resolve()) for c in images))
+    commande = [executable, "-p", "--output-format", "json", "--json-schema", json.dumps(schema),
+                "--max-turns", "15", "--tools", "Read" if images else ""]
+    if images:
+        commande += ["--allowedTools", "Read"]
+    # Sans cette précaution, Claude Code utiliserait la clé API (facturée) au lieu de l'abonnement.
+    env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")}
+    dossier = images[0].parent if images else config.DOSSIER_DONNEES
+    try:
+        res = subprocess.run(commande, input=texte, capture_output=True, text=True, encoding="utf-8",
+                             env=env, cwd=dossier, timeout=600, check=False)
+    except subprocess.TimeoutExpired as exc:
+        raise ErreurStructuration("Claude Code n'a pas répondu en 10 minutes.") from exc
+
+    try:
+        resultat = json.loads(res.stdout)
+    except json.JSONDecodeError as exc:
+        detail = (res.stderr or res.stdout or "").strip()[-300:]
+        raise ErreurStructuration(f"Claude Code a échoué : {detail}") from exc
+
+    if resultat.get("is_error") or resultat.get("subtype") != "success":
+        message = str(resultat.get("result") or resultat.get("subtype") or "erreur inconnue")
+        bas = message.lower()
+        if "login" in bas or "api key" in bas or "auth" in bas:
+            message = "Claude Code n'est pas connecté. Ouvre un terminal, tape claude puis /login."
+        elif "limit" in bas:
+            message = "Limite d'utilisation de ton abonnement atteinte. Réessaie plus tard."
+        raise ErreurStructuration(message[:400])
+
+    sortie = resultat.get("structured_output")
+    if isinstance(sortie, dict):
+        return sortie
+    try:
+        return json.loads(resultat.get("result") or "")
+    except json.JSONDecodeError as exc:
+        raise ErreurStructuration("Réponse de Claude Code illisible.") from exc
 
 
 # ---------- Adaptation aux appareils ----------
@@ -212,4 +262,4 @@ def adapter(recette: dict) -> dict:
         + f"\n\n<recette>\nTitre : {recette.get('titre') or ''}\nPortions : {recette.get('portions') or ''}\n"
         + f"Ingrédients :\n{ingredients}\n\nÉtapes :\n{etapes}\n\nNotes : {recette.get('notes') or ''}\n</recette>"
     )
-    return _appeler_claude([{"type": "text", "text": texte}], SCHEMA_ADAPTATIONS)
+    return _appeler_claude(texte, SCHEMA_ADAPTATIONS)
