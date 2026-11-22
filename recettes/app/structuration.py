@@ -23,8 +23,9 @@ SCHEMA_RECETTE = {
                     "quantite": {"type": "string"},
                     "unite": {"type": "string"},
                     "nom": {"type": "string"},
+                    "estimee": {"type": "boolean"},
                 },
-                "required": ["quantite", "unite", "nom"],
+                "required": ["quantite", "unite", "nom", "estimee"],
                 "additionalProperties": False,
             },
         },
@@ -45,7 +46,15 @@ Rédige la fiche recette en français.
 à l'écran ou dans la légende.
 - Garde les quantités et unités telles que la vidéo les donne. Convertis les unités américaines \
 (cups, oz, °F) en unités métriques et indique la valeur d'origine entre parenthèses.
-- Laisse "quantite" et "unite" vides quand l'information manque. N'invente aucune quantité.
+- Chaque ingrédient a une quantité et une unité utilisables pour la liste de courses. \
+"quantite" contient seulement un nombre ("200", "1/2", "1,5"), "unite" une unité simple \
+("g", "kg", "ml", "cl", "l", "c. à soupe", "c. à café", "gousse", "tranche"), ou rien pour \
+un ingrédient qui se compte à la pièce (œufs, citrons, oignons).
+- Quand la vidéo ne donne pas une quantité, estime-la : part habituelle pour une personne \
+(par exemple 80 à 100 g de pâtes ou de riz sec, 120 à 150 g de viande ou de poisson, 200 g de légumes, \
+1 œuf), multipliée par le nombre de portions. Mets alors "estimee" à true. Sinon "estimee" vaut false.
+- Exception : sel, poivre, épices, herbes séchées en pincée, huile ou beurre de cuisson en petite \
+quantité, eau de cuisson. Pour ceux-là, laisse "quantite" et "unite" vides et "estimee" à false.
 - Écris des étapes courtes, dans l'ordre, une action principale par étape.
 - Propose 2 à 5 tags en minuscules : type de plat, régime, difficulté, temps.
 - Mets dans "notes" les astuces du créateur et ce qui reste incertain.
@@ -223,6 +232,15 @@ Quantités :
 - Recalcule chaque quantité pour {personnes} personnes à partir des portions d'origine. \
 Si les portions d'origine manquent, estime-les d'après les quantités et dis-le dans les conseils.
 - Arrondis de façon pratique : œufs entiers, cuillères au demi près, grammes à 5 g près.
+- Chaque ingrédient a une quantité et une unité utilisables pour la liste de courses. \
+"quantite" contient seulement un nombre ("200", "1/2", "1,5"), "unite" une unité simple \
+("g", "kg", "ml", "cl", "l", "c. à soupe", "c. à café", "gousse", "tranche"), ou rien pour \
+un ingrédient qui se compte à la pièce (œufs, citrons, oignons).
+- Quand la recette ne donne pas une quantité, estime-la : part habituelle pour une personne \
+(par exemple 80 à 100 g de pâtes ou de riz sec, 120 à 150 g de viande ou de poisson, 200 g de légumes, \
+1 œuf), multipliée par le nombre de portions. Mets alors "estimee" à true. Sinon "estimee" vaut false.
+- Exception : sel, poivre, épices, herbes séchées en pincée, huile ou beurre de cuisson en petite \
+quantité, eau de cuisson. Pour ceux-là, laisse "quantite" et "unite" vides et "estimee" à false.
 - Mets cette liste dans "ingredients" et "portions" = {personnes}. Les étapes des deux appareils \
 utilisent ces quantités.
 
@@ -314,6 +332,8 @@ def valider(valeur, schema: dict, chemin: str = "réponse"):
         for cle, sous_schema in schema.get("properties", {}).items():
             if cle in valeur:
                 sortie[cle] = valider(valeur[cle], sous_schema, f"{chemin}.{cle}")
+            elif sous_schema.get("type") == "boolean" and cle == "estimee":
+                sortie[cle] = False
             elif cle in schema.get("required", []):
                 raise ErreurStructuration(f"Champ manquant : {chemin}.{cle}")
         return sortie

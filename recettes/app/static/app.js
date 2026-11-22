@@ -272,6 +272,7 @@ async function vueRecette(id) {
       </h2>
       ${base ? `<p class="aide" id="origine"></p>` : `<p class="aide">Nombre de personnes inconnu : quantités de la vidéo.</p>`}
       <ul class="ingredients" id="ingredients"></ul>
+      <p class="aide" id="legende-estimee" hidden>≈ Quantité absente de la vidéo, estimée par Claude.</p>
     </section>
 
     <section class="bloc">
@@ -297,10 +298,12 @@ async function vueRecette(id) {
     if (origine) origine.textContent = portions === base ? "Quantités de la recette d'origine." : `Quantités recalculées. Recette d'origine : ${r.portions}.`;
     const ul = document.getElementById("ingredients");
     if (!r.ingredients.length) { ul.innerHTML = `<li class="vide">Aucun ingrédient pour l'instant.</li>`; return; }
+    const legende = document.getElementById("legende-estimee");
+    if (legende) legende.hidden = !r.ingredients.some((i) => i.estimee && i.quantite);
     ul.innerHTML = r.ingredients.map((i, n) => `
       <li><label class="${coches.includes(n) ? "coche" : ""}">
         <input type="checkbox" data-n="${n}" ${coches.includes(n) ? "checked" : ""}>
-        <span class="qte">${echap([ajuster(i.quantite, facteur, i.unite), i.unite].filter(Boolean).join(" "))}</span>
+        <span class="qte">${i.estimee && i.quantite ? "≈ " : ""}${echap([ajuster(i.quantite, facteur, i.unite), i.unite].filter(Boolean).join(" "))}</span>
         <span>${echap(i.nom)}</span>
       </label></li>`).join("");
     ul.querySelectorAll("input").forEach((c) => c.addEventListener("change", () => {
@@ -378,7 +381,7 @@ function dessinerAppareils(r, onglet = "thermomix") {
       ${ap.explication ? `<p class="aide">${echap(ap.explication)}</p>` : ""}
       ${a.ingredients && a.ingredients.length && ap.faisable !== "non" ? `
         <details><summary>Ingrédients pour ${echap(a.portions)} personnes</summary>
-          <ul class="ingredients">${a.ingredients.map((i) => `<li><span class="qte">${echap([i.quantite, i.unite].filter(Boolean).join(" "))}</span><span>${echap(i.nom)}</span></li>`).join("")}</ul>
+          <ul class="ingredients">${a.ingredients.map((i) => `<li><span class="qte">${i.estimee && i.quantite ? "≈ " : ""}${echap([i.quantite, i.unite].filter(Boolean).join(" "))}</span><span>${echap(i.nom)}</span></li>`).join("")}</ul>
         </details>` : ""}
       ${(ap.etapes || []).length ? `<ol class="etapes etapes-appareil">${ap.etapes.map((e) => `
         <li>${echap(e.instruction)}
@@ -542,13 +545,17 @@ async function vueEdition(id) {
 
   const zoneIngr = document.getElementById("f-ingr");
   const zoneEtapes = document.getElementById("f-etapes");
-  const lireIngr = () => [...zoneIngr.children].map((l) => ({ quantite: l.children[0].value, unite: l.children[1].value, nom: l.children[2].value }));
+  // Une quantité retouchée à la main n'est plus une estimation.
+  const lireIngr = () => [...zoneIngr.children].map((l) => ({
+    quantite: l.children[0].value, unite: l.children[1].value, nom: l.children[2].value,
+    estimee: l.dataset.estimee === "1" && l.children[0].value === l.dataset.qte,
+  }));
   const lireEtapes = () => [...zoneEtapes.children].map((l) => l.children[0].value);
 
   function dessiner() {
     zoneIngr.innerHTML = ingr.map((i, n) => `
-      <div class="ligne-ingr">
-        <input value="${echap(i.quantite)}" placeholder="Qté" aria-label="Quantité">
+      <div class="ligne-ingr" data-estimee="${i.estimee ? "1" : ""}" data-qte="${echap(i.quantite)}">
+        <input value="${echap(i.quantite)}" placeholder="${i.estimee ? "≈ " : ""}Qté" aria-label="Quantité${i.estimee ? " estimée" : ""}" ${i.estimee ? 'class="estimee"' : ""}>
         <input value="${echap(i.unite)}" placeholder="Unité" aria-label="Unité">
         <input value="${echap(i.nom)}" placeholder="Ingrédient" aria-label="Ingrédient">
         <button type="button" data-suppr-ingr="${n}" aria-label="Retirer">✕</button>
@@ -603,7 +610,8 @@ async function vueCourses() {
     for (const i of r.ingredients) {
       const cle = `${i.nom.trim().toLowerCase()}|${(i.unite || "").trim().toLowerCase()}`;
       const n = versNombre(i.quantite);
-      const l = lignes.get(cle) || { nom: i.nom.trim(), unite: i.unite, total: 0, autres: [] };
+      const l = lignes.get(cle) || { nom: i.nom.trim(), unite: i.unite, total: 0, autres: [], estimee: false };
+      if (i.estimee && i.quantite) l.estimee = true;
       if (n != null) l.total += n * r.facteur;
       else if (i.quantite) l.autres.push(i.quantite);
       lignes.set(cle, l);
@@ -621,7 +629,7 @@ async function vueCourses() {
           const qte = [l.total ? formater(l.total) : "", ...l.autres].filter(Boolean).join(" + ");
           const fait = coches.includes(cle);
           return `<li><label class="${fait ? "coche" : ""}"><input type="checkbox" data-cle="${echap(cle)}" ${fait ? "checked" : ""}>
-            <span class="qte">${echap([qte, l.unite].filter(Boolean).join(" "))}</span><span>${echap(l.nom)}</span></label></li>`;
+            <span class="qte">${l.estimee && qte ? "≈ " : ""}${echap([qte, l.unite].filter(Boolean).join(" "))}</span><span>${echap(l.nom)}</span></label></li>`;
         }).join("")}
       </ul>
       <div class="actions"><button id="copier">Copier la liste</button></div>
@@ -636,7 +644,7 @@ async function vueCourses() {
   }));
   document.getElementById("vider").onclick = () => { ecrireStock("courses", []); ecrireStock("coches-courses", []); majCompteur(); vueCourses(); };
   document.getElementById("copier").onclick = async () => {
-    const texte = triees.map(([, l]) => `- ${[l.total ? formater(l.total) : "", ...l.autres].filter(Boolean).join(" + ")} ${l.unite || ""} ${l.nom}`.replace(/\s+/g, " ").trim()).join("\n");
+    const texte = triees.map(([, l]) => `- ${l.estimee ? "≈" : ""}${[l.total ? formater(l.total) : "", ...l.autres].filter(Boolean).join(" + ")} ${l.unite || ""} ${l.nom}`.replace(/\s+/g, " ").trim()).join("\n");
     try { await navigator.clipboard.writeText(texte); toast("Liste copiée."); } catch (_) { toast("Copie impossible sur ce navigateur."); }
   };
 }

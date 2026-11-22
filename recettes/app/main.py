@@ -46,6 +46,7 @@ class Ingredient(BaseModel):
     quantite: str = ""
     unite: str = ""
     nom: str = ""
+    estimee: bool = False
 
 
 class Reglages(BaseModel):

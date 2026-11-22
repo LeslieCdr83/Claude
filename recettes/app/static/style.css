@@ -196,3 +196,5 @@ details pre { white-space: pre-wrap; font-family: inherit; font-size: .9rem; col
 .choix-claude { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .choix-claude button { flex: 1 1 auto; justify-content: center; }
 #form-import .aide { margin: 10px 0 0; }
+
+.ligne-ingr input.estimee { font-style: italic; border-style: dashed; }

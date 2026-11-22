@@ -82,6 +82,8 @@ Le bouton « Sans analyse » importe la vidéo en brouillon, avec la légende, l
 
 ## Portions et appareils
 
+Quand la vidéo ne donne pas une quantité, Claude l'estime à partir d'une part habituelle par personne (par exemple 80 à 100 g de pâtes sèches), multipliée par le nombre de portions. Ces quantités portent le signe ≈ sur la fiche et dans la liste de courses. Le sel, le poivre et les épices restent sans quantité. Une quantité corrigée à la main perd le signe ≈.
+
 Chaque fiche affiche les quantités pour 4 personnes. Les boutons + et − changent le nombre, et la recette d'origine reste indiquée. Pour un autre nombre par défaut, ajoute `PORTIONS_DEFAUT=2` dans `reglages.txt`.
 
 Après chaque import, Claude rédige aussi une version Thermomix TM7 et une version airfryer Ninja pour 4 personnes, avec les réglages de chaque étape. L'encart indique si la recette se fait entièrement, en partie ou pas du tout avec l'appareil. Pour des réglages plus précis, indique le modèle de ton airfryer : `MODELE_AIRFRYER=Ninja Foodi Dual Zone AF400EU`. Pour ne générer ces versions qu'à la demande, mets `ADAPTATION_AUTO=non`.
