@@ -79,7 +79,7 @@ async function vueListe() {
   vue.innerHTML = `
     <section class="import">
       <h2>Ajouter une recette</h2>
-      <p>Colle le lien d'une vidéo TikTok, Instagram ou YouTube.</p>
+      <p>Colle le lien d'une vidéo TikTok, Instagram, Facebook ou YouTube.</p>
       <form class="ligne" id="form-import">
         <input type="text" id="champ-url" placeholder="https://www.tiktok.com/@..." inputmode="url" autocomplete="off" required>
         <button class="principal" type="submit">Importer</button>

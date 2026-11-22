@@ -49,14 +49,20 @@ def telecharger(url: str, dossier: Path) -> Video:
     if config.COOKIES:
         options["cookiefile"] = config.COOKIES
 
+    url = _resoudre_lien_court(url)
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
             info = ydl.extract_info(url, download=True)
     except Exception as exc:  # yt-dlp lève plusieurs types d'erreurs
         message = str(exc)
-        if "login" in message.lower() or "cookies" in message.lower():
-            message += (" | Instagram demande souvent une connexion. Renseigne COOKIES_FICHIER"
-                        " dans reglages.txt (voir le README).")
+        bas = message.lower()
+        if any(m in bas for m in ("login", "cookies", "log in", "unsupported url", "no video")):
+            if "facebook" in url or "fb.watch" in url:
+                message += (" | Facebook demande souvent une connexion, et les posts sans vidéo ne sont pas"
+                            " pris en charge. Renseigne COOKIES_FICHIER dans reglages.txt (voir le README).")
+            else:
+                message += (" | Instagram demande souvent une connexion. Renseigne COOKIES_FICHIER"
+                            " dans reglages.txt (voir le README).")
         raise ErreurTelechargement(message) from exc
 
     # Les carrousels arrivent sous forme de liste : on garde les infos du post parent.
@@ -83,6 +89,21 @@ def telecharger(url: str, dossier: Path) -> Video:
         video.images_carrousel = images[:10]
         video.miniature = images[0] if images else None
     return video
+
+
+def _resoudre_lien_court(url: str) -> str:
+    """Les liens de partage Facebook (fb.watch, /share/v/, /share/r/) redirigent vers la vraie vidéo."""
+    if not re.search(r"fb\.watch/|facebook\.com/share/", url):
+        return url
+    import urllib.request
+    try:
+        requete = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(requete, timeout=15) as reponse:
+            finale = reponse.geturl()
+        # Une redirection vers la page de connexion ne sert à rien : on garde le lien d'origine.
+        return url if "/login" in finale else finale
+    except Exception:
+        return url
 
 
 def extraire_images(fichier: Path, duree: float, dossier: Path, nombre: int = 6) -> list[Path]:

@@ -1,6 +1,6 @@
 # Mes recettes
 
-Application web personnelle qui sauvegarde des recettes depuis une vidéo TikTok, Instagram ou YouTube.
+Application web personnelle qui sauvegarde des recettes depuis une vidéo TikTok, Instagram, Facebook ou YouTube.
 
 Tu colles le lien de la vidéo. L'application :
 
@@ -45,13 +45,14 @@ Chaque fiche affiche les quantités pour 4 personnes. Les boutons + et − chang
 
 Après chaque import, Claude rédige aussi une version Thermomix TM7 et une version airfryer Ninja pour 4 personnes, avec les réglages de chaque étape. L'encart indique si la recette se fait entièrement, en partie ou pas du tout avec l'appareil. Pour des réglages plus précis, indique le modèle de ton airfryer : `MODELE_AIRFRYER=Ninja Foodi Dual Zone AF400EU`. Pour ne générer ces versions qu'à la demande, mets `ADAPTATION_AUTO=non`.
 
-## Instagram
+## Instagram et Facebook
 
-Instagram bloque souvent le téléchargement sans connexion. Dans ce cas :
+Instagram et Facebook bloquent souvent le téléchargement sans connexion. Dans ce cas :
 
 1. Installe l'extension « Get cookies.txt LOCALLY » dans ton navigateur.
-2. Connecte-toi à Instagram et exporte les cookies dans un fichier `cookies.txt`.
-3. Indique son chemin dans `reglages.txt` : `COOKIES_FICHIER=/chemin/vers/cookies.txt`.
+2. Connecte-toi à Instagram et à Facebook dans le même navigateur, puis exporte les cookies de chaque site.
+3. Regroupe-les dans un seul fichier `cookies.txt` en collant le contenu de l'un à la suite de l'autre.
+4. Indique son chemin dans `reglages.txt` : `COOKIES_FICHIER=/chemin/vers/cookies.txt`.
 
 ## Sur ton téléphone, avec Tailscale
 
