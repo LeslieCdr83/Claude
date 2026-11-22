@@ -1,4 +1,4 @@
-# Copie ce fichier sous le nom .env puis remplis les valeurs.
+# Copie ce fichier sous le nom reglages.txt puis remplis les valeurs.
 
 # Clé API Claude (https://console.anthropic.com). Sans clé, l'import garde
 # la légende, la transcription et les captures, sans rédiger la fiche.

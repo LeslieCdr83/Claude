@@ -1,4 +1,4 @@
-"""Réglages de l'application, lus depuis les variables d'environnement ou le fichier .env."""
+"""Réglages de l'application, lus depuis les variables d'environnement ou le fichier reglages.txt."""
 import os
 from pathlib import Path
 
@@ -6,10 +6,14 @@ RACINE = Path(__file__).resolve().parent.parent
 
 
 def _charger_env() -> None:
-    fichier = RACINE / ".env"
-    if not fichier.exists():
-        return
-    for ligne in fichier.read_text(encoding="utf-8").splitlines():
+    for nom in ("reglages.txt", ".env"):
+        fichier = RACINE / nom
+        if fichier.exists():
+            _lire(fichier)
+
+
+def _lire(fichier: Path) -> None:
+    for ligne in fichier.read_text(encoding="utf-8-sig").splitlines():
         ligne = ligne.strip()
         if not ligne or ligne.startswith("#") or "=" not in ligne:
             continue
@@ -29,6 +33,20 @@ MODELE_WHISPER = os.environ.get("MODELE_WHISPER", "small")
 COOKIES = os.environ.get("COOKIES_FICHIER") or None
 
 MODELE_CLAUDE = os.environ.get("MODELE_CLAUDE", "claude-opus-5-5")
+
+
+def _trouver_ffmpeg() -> str:
+    """ffmpeg est fourni par le paquet imageio-ffmpeg : rien à installer à part."""
+    if os.environ.get("FFMPEG"):
+        return os.environ["FFMPEG"]
+    try:
+        import imageio_ffmpeg
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return "ffmpeg"
+
+
+FFMPEG = _trouver_ffmpeg()
 
 
 def cle_claude_presente() -> bool:

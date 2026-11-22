@@ -190,7 +190,7 @@ def relancer_analyse(recette_id: int, taches: BackgroundTasks):
     if not db.lire(recette_id):
         raise HTTPException(404, "Recette introuvable.")
     if not config.cle_claude_presente():
-        raise HTTPException(400, "Ajoute ANTHROPIC_API_KEY dans le fichier .env puis redémarre.")
+        raise HTTPException(400, "Ajoute ta clé dans reglages.txt puis relance l'appli.")
     db.mettre_a_jour(recette_id, statut="en_cours", progression="En attente", erreur="")
     taches.add_task(analyser, recette_id)
     return {"ok": True}

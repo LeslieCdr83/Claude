@@ -1,5 +1,5 @@
 """Récupère une vidéo depuis son lien, puis en tire la légende, la voix et des images."""
-import shutil
+import re
 import subprocess
 import threading
 from dataclasses import dataclass, field
@@ -44,6 +44,7 @@ def telecharger(url: str, dossier: Path) -> Video:
         "quiet": True,
         "no_warnings": True,
         "noprogress": True,
+        "ffmpeg_location": config.FFMPEG,
     }
     if config.COOKIES:
         options["cookiefile"] = config.COOKIES
@@ -55,7 +56,7 @@ def telecharger(url: str, dossier: Path) -> Video:
         message = str(exc)
         if "login" in message.lower() or "cookies" in message.lower():
             message += (" | Instagram demande souvent une connexion. Renseigne COOKIES_FICHIER"
-                        " dans le fichier .env (voir le README).")
+                        " dans reglages.txt (voir le README).")
         raise ErreurTelechargement(message) from exc
 
     # Les carrousels arrivent sous forme de liste : on garde les infos du post parent.
@@ -86,10 +87,8 @@ def telecharger(url: str, dossier: Path) -> Video:
 
 def extraire_images(fichier: Path, duree: float, dossier: Path, nombre: int = 6) -> list[Path]:
     """Capture des images réparties sur la vidéo pour lire le texte affiché à l'écran."""
-    if not shutil.which("ffmpeg"):
-        return []
     if duree <= 0:
-        duree = _duree_ffprobe(fichier)
+        duree = _duree_video(fichier)
     if duree <= 0:
         return []
     images = []
@@ -97,7 +96,7 @@ def extraire_images(fichier: Path, duree: float, dossier: Path, nombre: int = 6)
         instant = duree * (i + 0.5) / nombre
         sortie = dossier / f"capture_{i:02d}.jpg"
         subprocess.run(
-            ["ffmpeg", "-loglevel", "error", "-y", "-ss", f"{instant:.2f}", "-i", str(fichier),
+            [config.FFMPEG, "-loglevel", "error", "-y", "-ss", f"{instant:.2f}", "-i", str(fichier),
              "-frames:v", "1", "-vf", "scale='min(768,iw)':-2", "-q:v", "4", str(sortie)],
             check=False,
         )
@@ -106,17 +105,14 @@ def extraire_images(fichier: Path, duree: float, dossier: Path, nombre: int = 6)
     return images
 
 
-def _duree_ffprobe(fichier: Path) -> float:
-    if not shutil.which("ffprobe"):
+def _duree_video(fichier: Path) -> float:
+    """Lit la durée dans la sortie de ffmpeg (ligne "Duration: 00:01:02.50")."""
+    res = subprocess.run([config.FFMPEG, "-i", str(fichier)], capture_output=True, text=True, check=False)
+    trouve = re.search(r"Duration: (\d+):(\d+):(\d+(?:\.\d+)?)", res.stderr)
+    if not trouve:
         return 0.0
-    res = subprocess.run(
-        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(fichier)],
-        capture_output=True, text=True, check=False,
-    )
-    try:
-        return float(res.stdout.strip())
-    except ValueError:
-        return 0.0
+    h, m, s = trouve.groups()
+    return int(h) * 3600 + int(m) * 60 + float(s)
 
 
 _modele_whisper = None
@@ -131,7 +127,7 @@ def transcrire(fichier: Path) -> str:
 
     # ffmpeg extrait la piste audio en 16 kHz mono. Évite les soucis de version de PyAV.
     res = subprocess.run(
-        ["ffmpeg", "-loglevel", "error", "-i", str(fichier), "-vn", "-ac", "1", "-ar", "16000",
+        [config.FFMPEG, "-loglevel", "error", "-i", str(fichier), "-vn", "-ac", "1", "-ar", "16000",
          "-f", "s16le", "-"],
         capture_output=True, check=False,
     )

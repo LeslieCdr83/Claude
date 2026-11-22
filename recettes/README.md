@@ -13,56 +13,31 @@ Tu retrouves ensuite tes recettes avec une recherche, des tags, des favoris, un 
 
 ## Installation
 
-Il te faut Python 3.10 ou plus récent et ffmpeg.
-
-Sur Mac :
-
-```bash
-brew install python ffmpeg
-```
-
-Sur Windows, installe Python depuis python.org puis ffmpeg :
-
-```bash
-winget install ffmpeg
-```
-
-Dans le dossier `recettes`, crée l'environnement et installe les dépendances :
-
-```bash
-python3 -m venv .venv
-```
-
-```bash
-source .venv/bin/activate
-```
-
-Sous Windows, la commande d'activation est `.venv\Scripts\activate`.
-
-```bash
-pip install -r requirements.txt
-```
+1. Installe Python 3.12 depuis https://www.python.org/downloads/. Sur Windows, coche « Add python.exe to PATH » au début de l'installation.
+2. Télécharge le dossier de l'appli et décompresse-le où tu veux, par exemple dans Documents.
+3. Ouvre le dossier `recettes`.
 
 ## Lancement
 
-```bash
-uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
+Sur Mac, double-clique sur `lancer-mac.command`. La première fois, macOS bloque le fichier : fais clic droit, « Ouvrir », puis confirme.
 
-Ouvre http://localhost:8000 dans ton navigateur.
+Sur Windows, double-clique sur `lancer-windows.bat`. Si Windows affiche « Windows a protégé votre ordinateur », clique sur « Informations complémentaires » puis « Exécuter quand même ».
 
-Le premier import télécharge le modèle de transcription (environ 500 Mo pour `small`). Les imports suivants prennent 30 secondes à 2 minutes.
+Le premier lancement installe tout, en 2 à 5 minutes. Le navigateur s'ouvre ensuite sur http://localhost:8000. Garde la fenêtre noire ouverte tant que tu utilises l'appli.
+
+Le premier import télécharge aussi le modèle de transcription (environ 500 Mo). Les imports suivants prennent 30 secondes à 2 minutes.
 
 ## Ajouter la clé Claude
 
 1. Crée un compte sur https://console.anthropic.com et ajoute quelques dollars de crédit.
 2. Crée une clé API.
-3. Copie `.env.exemple` sous le nom `.env` et colle ta clé après `ANTHROPIC_API_KEY=`.
-4. Redémarre le serveur.
+3. Dans le dossier `recettes`, fais une copie de `reglages-exemple.txt` et renomme-la `reglages.txt`.
+4. Ouvre `reglages.txt` avec un éditeur de texte et colle ta clé après `ANTHROPIC_API_KEY=`.
+5. Ferme la fenêtre noire et relance l'appli.
 
 Sans clé, l'import marche déjà. La recette reste en brouillon avec la légende, la transcription et les captures. Une fois la clé ajoutée, ouvre le brouillon et clique sur « Analyser avec Claude ».
 
-Coût estimé : 3 à 8 centimes par recette avec le modèle Claude Opus 5.5 (4 $ par million de jetons en entrée, 20 $ en sortie, d'après la grille tarifaire d'Anthropic). Pour réduire le coût, mets `MODELE_CLAUDE=claude-haiku-5-5` dans `.env`.
+Coût estimé : 3 à 8 centimes par recette avec le modèle Claude Opus 5.5 (4 $ par million de jetons en entrée, 20 $ en sortie, d'après la grille tarifaire d'Anthropic). Pour réduire le coût, ajoute la ligne `MODELE_CLAUDE=claude-haiku-5-5` dans `reglages.txt`.
 
 ## Instagram
 
@@ -70,15 +45,37 @@ Instagram bloque souvent le téléchargement sans connexion. Dans ce cas :
 
 1. Installe l'extension « Get cookies.txt LOCALLY » dans ton navigateur.
 2. Connecte-toi à Instagram et exporte les cookies dans un fichier `cookies.txt`.
-3. Indique son chemin dans `.env` : `COOKIES_FICHIER=/chemin/vers/cookies.txt`.
+3. Indique son chemin dans `reglages.txt` : `COOKIES_FICHIER=/chemin/vers/cookies.txt`.
 
-## Sur ton téléphone
+## Sur ton téléphone, avec Tailscale
 
-Le serveur tourne sur ton ordinateur. Ton téléphone y accède s'il est sur le même Wi-Fi : ouvre `http://IP-DE-TON-ORDI:8000`.
+Tailscale relie ton téléphone à ton ordinateur par une adresse HTTPS privée. Personne d'autre n'y a accès. C'est gratuit pour un usage personnel.
 
-Pour voir l'appli dans le menu « Partager » de TikTok et Instagram, il faut l'installer comme application. Android et iOS l'exigent en HTTPS. La solution la plus simple est Tailscale (gratuit) : la commande `tailscale serve 8000` donne une adresse HTTPS privée, accessible seulement depuis tes appareils. Ouvre cette adresse sur ton téléphone puis choisis « Ajouter à l'écran d'accueil ».
+1. Crée un compte sur https://tailscale.com et installe Tailscale sur ton ordinateur.
+2. Installe l'appli Tailscale sur ton téléphone et connecte-toi avec le même compte.
+3. Lance Mes recettes sur l'ordinateur.
+4. Ouvre un terminal (Terminal sur Mac, PowerShell sur Windows) et tape la commande ci-dessous.
 
-Sur Android, l'appli apparaît alors dans le menu Partager. Sur iPhone, Safari ne gère pas ce menu pour les applis web : copie le lien et colle-le dans l'appli.
+Sur Mac :
+
+```bash
+/Applications/Tailscale.app/Contents/MacOS/Tailscale serve --bg 8000
+```
+
+Sur Windows :
+
+```bash
+tailscale serve --bg 8000
+```
+
+La première fois, la commande affiche un lien pour activer HTTPS. Ouvre-le, valide, puis relance la commande. Elle affiche ensuite ton adresse, du type `https://nom-de-ton-ordi.tail1234.ts.net`. Cette commande reste active même après un redémarrage.
+
+5. Sur ton téléphone, Tailscale activé, ouvre cette adresse.
+6. Installe l'appli : sur Android, menu du navigateur puis « Installer l'application ». Sur iPhone, bouton Partager de Safari puis « Sur l'écran d'accueil ».
+
+Sur Android, « Mes recettes » apparaît ensuite dans le menu Partager de TikTok et Instagram. Sur iPhone, copie le lien de la vidéo et colle-le dans l'appli.
+
+L'ordinateur doit être allumé, avec Mes recettes lancé, pour que le téléphone y accède.
 
 ## Données
 
