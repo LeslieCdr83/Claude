@@ -245,3 +245,11 @@ def test_lien_leclerc_drive():
     assert client.get("/api/etat").json()["drive"].endswith("TexteRecherche={q}")
     assert client.put("/api/reglages", json={"drive": "https://exemple.fr/accueil"}).status_code == 400
     assert client.put("/api/reglages", json={"drive": ""}).json()["drive"] == ""
+
+
+def test_liste_de_courses_partagee():
+    assert client.put("/api/partage/courses", json=[{"id": 1, "facteur": 1}]).status_code == 200
+    assert client.put("/api/partage/coches-courses", json=["farine|g"]).status_code == 200
+    partage = client.get("/api/partage").json()
+    assert partage["courses"] == [{"id": 1, "facteur": 1}] and partage["coches-courses"] == ["farine|g"]
+    assert client.put("/api/partage/autre", json=[]).status_code == 404

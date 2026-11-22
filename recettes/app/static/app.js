@@ -30,8 +30,35 @@ function toast(msg) {
   t._m = setTimeout(() => t.classList.remove("visible"), 3000);
 }
 
-const lireStock = (cle, defaut) => { try { return JSON.parse(localStorage.getItem(cle)) ?? defaut; } catch (_) { return defaut; } };
-const ecrireStock = (cle, val) => { try { localStorage.setItem(cle, JSON.stringify(val)); } catch (_) {} };
+// La liste de courses et le menu sont gardés sur le serveur : le PC et le téléphone partagent les mêmes.
+// Le reste (cases cochées d'une fiche, dernier mode utilisé) reste propre à chaque appareil.
+const PARTAGES = new Set(["courses", "coches-courses", "menu-semaine", "menu-verrous"]);
+let partage = {};
+const lireLocal = (cle, defaut) => { try { return JSON.parse(localStorage.getItem(cle)) ?? defaut; } catch (_) { return defaut; } };
+const lireStock = (cle, defaut) => (PARTAGES.has(cle) ? partage[cle] ?? defaut : lireLocal(cle, defaut));
+function ecrireStock(cle, val) {
+  if (PARTAGES.has(cle)) {
+    partage[cle] = val;
+    api(`/api/partage/${cle}`, { method: "PUT", body: val }).catch(() => toast("Enregistrement impossible : l'ordinateur est-il allumé ?"));
+    return;
+  }
+  try { localStorage.setItem(cle, JSON.stringify(val)); } catch (_) {}
+}
+async function chargerPartage() {
+  try { partage = await api("/api/partage"); } catch (_) { return; }
+  // Première fois : envoie au serveur ce que ce navigateur avait gardé pour lui seul.
+  for (const cle of PARTAGES) {
+    const ancien = lireLocal(cle, null);
+    if (!ancien) continue;
+    if (partage[cle] === undefined && ancien.length) ecrireStock(cle, ancien);
+    else if (cle === "courses" && Array.isArray(partage.courses)) {
+      // Deux appareils avaient chacun leur liste : on les réunit.
+      const ajouts = ancien.filter((a) => !partage.courses.some((x) => x.id === a.id));
+      if (ajouts.length) ecrireStock("courses", [...partage.courses, ...ajouts]);
+    }
+    try { localStorage.removeItem(cle); } catch (_) {}
+  }
+}
 
 const panier = () => lireStock("courses", []);
 function majCompteur() {
@@ -914,6 +941,8 @@ async function routeur() {
   let m;
   // Relit les réglages à chaque page : un changement fait sur un autre appareil s'applique tout de suite.
   try { etat = await api("/api/etat"); } catch (_) {}
+  await chargerPartage();
+  majCompteur();
   try {
     if ((m = h.match(/^#\/recette\/(\d+)\/modifier$/))) await vueEdition(+m[1]);
     else if ((m = h.match(/^#\/recette\/(\d+)$/))) await vueRecette(+m[1]);
@@ -940,6 +969,10 @@ async function demarrer() {
     await lancerImport(partage);
   }
   window.addEventListener("hashchange", routeur);
+  // En revenant sur l'appli, la liste et le menu se mettent à jour avec les changements faits ailleurs.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && /^#\/(courses|menus)$/.test(location.hash)) routeur();
+  });
   routeur();
 }
 

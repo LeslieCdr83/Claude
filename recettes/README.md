@@ -151,7 +151,7 @@ L'ordinateur doit être allumé, avec Mes recettes lancé, pour que le télépho
 
 ## Données
 
-Les recettes vivent dans `data/recettes.db` et les images dans `data/images`. Sauvegarde ce dossier pour garder ta bibliothèque.
+Les recettes vivent dans `data/recettes.db` et les images dans `data/images`. La liste de courses et le menu de la semaine sont dans `data/partage.json` : le PC et le téléphone partagent les mêmes. Sauvegarde ce dossier pour garder ta bibliothèque.
 
 ## Tests
 

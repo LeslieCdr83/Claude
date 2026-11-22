@@ -1,11 +1,13 @@
 """Serveur web : API des recettes et interface."""
+import json
 import re
 import shutil
+import threading
 import tempfile
 import traceback
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Body, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -374,6 +376,37 @@ def supprimer(recette_id: int):
     if not db.supprimer(recette_id):
         raise HTTPException(404, "Recette introuvable.")
     shutil.rmtree(config.DOSSIER_IMAGES / str(recette_id), ignore_errors=True)
+    return {"ok": True}
+
+
+# ---------- Données partagées entre appareils (liste de courses, menu de la semaine) ----------
+CLES_PARTAGEES = ("courses", "coches-courses", "menu-semaine", "menu-verrous")
+FICHIER_PARTAGE = config.DOSSIER_DONNEES / "partage.json"
+_verrou_partage = threading.Lock()
+
+
+def _lire_partage() -> dict:
+    try:
+        return json.loads(FICHIER_PARTAGE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+@app.get("/api/partage")
+def lire_partage():
+    return _lire_partage()
+
+
+@app.put("/api/partage/{cle}")
+def ecrire_partage(cle: str, valeur: list = Body(...)):
+    if cle not in CLES_PARTAGEES:
+        raise HTTPException(404, "Donnée inconnue.")
+    if len(json.dumps(valeur)) > 200_000:
+        raise HTTPException(413, "Donnée trop grande.")
+    with _verrou_partage:
+        donnees = _lire_partage()
+        donnees[cle] = valeur
+        FICHIER_PARTAGE.write_text(json.dumps(donnees, ensure_ascii=False), encoding="utf-8")
     return {"ok": True}
 
 
