@@ -198,3 +198,12 @@ details pre { white-space: pre-wrap; font-family: inherit; font-size: .9rem; col
 #form-import .aide { margin: 10px 0 0; }
 
 .ligne-ingr input.estimee { font-style: italic; border-style: dashed; }
+
+.jour { display: grid; grid-template-columns: 72px 1fr auto; gap: 12px; align-items: center;
+  background: var(--carte); border: 1px solid var(--bord); border-radius: var(--rayon); padding: 10px; margin-bottom: 10px; }
+.jour img { width: 72px; height: 72px; object-fit: cover; border-radius: 10px; }
+.jour-infos { min-width: 0; }
+.jour-infos strong { color: var(--texte); display: block; line-height: 1.3; }
+.jour-actions { display: flex; flex-direction: column; gap: 6px; }
+.jour-actions button { padding: 6px 10px; justify-content: center; }
+.barre nav { gap: 14px; }

@@ -659,6 +659,152 @@ async function vueEdition(id) {
   });
 }
 
+// ---------- Menus de la semaine ----------
+const JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"];
+// Pas des plats pour un repas complet.
+const HORS_MENU = /dessert|gâteau|gateau|boisson|cocktail|smoothie|sauce|apéro|apéritif|aperitif|goûter|gouter|biscuit|confiture|pâtisserie|patisserie/i;
+// Ingrédients présents partout : ils ne disent rien du plat.
+const BASIQUES = new Set(["sel", "poivre", "huile", "olive", "beurre", "eau", "ail", "oignon", "échalote", "sucre", "farine",
+  "lait", "crème", "persil", "basilic", "thym", "laurier", "paprika", "cumin", "épices", "muscade", "vinaigre", "moutarde",
+  "citron", "levure", "bouillon", "cube", "gousse", "pincée", "frais", "fraîche", "râpé", "râpée", "de", "du", "la", "le", "les", "à", "au", "aux", "et"]);
+
+// Familles d'ingrédients principaux : deux plats de la même famille se ressemblent.
+const FAMILLES = [
+  ["pâtes", /p[âa]tes|spaghetti|penne|tagliatelle|linguine|fusilli|macaroni|lasagne|ravioli|gnocchi|nouille|coquillette/],
+  ["riz", /\briz\b|risotto|paella/],
+  ["poulet", /poulet|volaille|dinde|canard/],
+  ["bœuf", /b(oe|œ)uf|steak|veau|hach[ée]/],
+  ["porc", /porc|lardon|jambon|saucisse|chorizo|bacon/],
+  ["poisson", /poisson|saumon|cabillaud|thon|colin|merlu|truite|crevette|moule|fruits de mer/],
+  ["œufs", /\b(oe|œ)ufs?\b|omelette/],
+  ["légumineuses", /lentille|pois chiche|haricot rouge|haricots rouges|f[èe]ve/],
+  ["pâte à tarte", /p[âa]te bris[ée]e|p[âa]te feuillet[ée]e|tarte|quiche|pizza/],
+  ["pommes de terre", /pommes? de terre|patate|frite/],
+];
+
+function motsCles(r) {
+  const texte = (r.titre + " " + r.ingredients.slice(0, 5).map((i) => i.nom).join(" ")).toLowerCase();
+  const familles = new Set(FAMILLES.filter(([, re]) => re.test(texte)).map(([nom]) => nom));
+  const tags = new Set(r.tags.map((x) => x.toLowerCase()));
+  const ingr = new Set();
+  let gardes = 0;
+  for (const i of r.ingredients) {
+    const utiles = i.nom.toLowerCase().split(/[^a-zà-ÿœ]+/).filter((m) => m.length > 2 && !BASIQUES.has(m));
+    if (!utiles.length) continue;
+    utiles.forEach((m) => ingr.add(m.replace(/s$/, "")));
+    if (++gardes >= 4) break;
+  }
+  return { familles, tags, ingr };
+}
+const communs = (a, b) => { let n = 0; for (const x of a) if (b.has(x)) n++; return n; };
+function ressemblance(a, b) {
+  return 0.7 * Math.min(1, communs(a.familles, b.familles)) + 0.25 * communs(a.tags, b.tags) + 0.1 * communs(a.ingr, b.ingr);
+}
+
+// Tire des plats au hasard en écartant ceux qui ressemblent trop à ceux déjà choisis.
+// eviter : plats du tirage précédent, pénalisés pour varier d'une semaine à l'autre.
+function tirerMenus(candidats, nombre, imposes = [], eviter = new Set()) {
+  const choisis = [...imposes];
+  const restants = candidats.filter((r) => !choisis.some((c) => c.id === r.id));
+  while (choisis.length < nombre && restants.length) {
+    const scores = restants.map((r) => {
+      const proche = choisis.length ? Math.max(...choisis.map((c) => ressemblance(r._mots, c._mots))) : 0;
+      return { r, score: proche + (eviter.has(r.id) ? 0.5 : 0) + Math.random() * 0.6 };
+    });
+    scores.sort((x, y) => x.score - y.score);
+    choisis.push(scores[0].r);
+    restants.splice(restants.indexOf(scores[0].r), 1);
+  }
+  return choisis;
+}
+
+async function vueMenus() {
+  const toutes = (await api("/api/recettes")).filter((r) => r.statut === "pret" && r.ingredients.length);
+  const plats = toutes.filter((r) => !HORS_MENU.test(r.tags.join(" ") + " " + r.titre));
+  const candidats = (plats.length >= 5 ? plats : toutes).map((r) => ({ ...r, _mots: motsCles(r) }));
+  const parId = new Map(candidats.map((r) => [r.id, r]));
+
+  // Le menu en cours reste affiché d'une visite à l'autre.
+  let menu = lireStock("menu-semaine", []).map((id) => parId.get(id)).filter(Boolean);
+  const verrous = new Set(lireStock("menu-verrous", []));
+
+  function generer(garder = []) {
+    const imposes = menu.filter((r) => garder.includes(r.id));
+    const tirage = tirerMenus(candidats, Math.min(5, candidats.length), imposes, new Set(menu.map((r) => r.id)));
+    // Remet les plats gardés à leur jour d'origine.
+    const resultat = new Array(tirage.length);
+    menu.forEach((r, j) => { if (garder.includes(r.id) && j < resultat.length) resultat[j] = r; });
+    const libres = tirage.filter((r) => !garder.includes(r.id));
+    for (let j = 0; j < resultat.length; j++) if (!resultat[j]) resultat[j] = libres.shift();
+    menu = resultat.filter(Boolean);
+    ecrireStock("menu-semaine", menu.map((r) => r.id));
+    dessiner();
+  }
+
+  function remplacer(jour) {
+    const autres = menu.filter((_, j) => j !== jour);
+    const options = candidats.filter((r) => !menu.some((m) => m.id === r.id));
+    if (!options.length) { toast("Pas d'autre recette disponible."); return; }
+    menu[jour] = tirerMenus(options, autres.length + 1, autres).pop();
+    ecrireStock("menu-semaine", menu.map((r) => r.id));
+    dessiner();
+  }
+
+  function dessiner() {
+    if (candidats.length < 2) {
+      vue.innerHTML = `<p class="vide">Il faut au moins 2 recettes rédigées pour composer des menus. Tu en as ${candidats.length}.</p>`;
+      return;
+    }
+    vue.innerHTML = `
+      <section class="bloc">
+        <h2>Menus de la semaine</h2>
+        <p class="aide">5 plats tirés au hasard parmi tes ${candidats.length} recettes, en évitant les plats trop proches. Les desserts, boissons et sauces sont écartés.${candidats.length < 5 ? " Ajoute des recettes pour remplir toute la semaine." : ""}</p>
+        <div class="actions">
+          <button class="principal" id="m-tirer">${menu.length ? "Nouveau tirage" : "Tirer 5 menus"}</button>
+          ${menu.length ? `<button id="m-courses">🛒 Tout ajouter aux courses</button>` : ""}
+        </div>
+        ${menu.length ? `<p class="aide">🔒 garde un plat au prochain tirage. ↻ change seulement ce jour.</p>` : ""}
+      </section>
+      ${menu.map((r, j) => `
+        <article class="jour">
+          <a href="#/recette/${r.id}"><img src="${imageRecette(r)}" alt="" loading="lazy"></a>
+          <div class="jour-infos">
+            <div class="aide">${JOURS[j]}</div>
+            <a href="#/recette/${r.id}"><strong>${echap(r.titre)}</strong></a>
+            <div class="aide">${echap([r.temps_preparation && "⏱ " + r.temps_preparation, r.tags.slice(0, 3).join(", ")].filter(Boolean).join(" · "))}</div>
+          </div>
+          <div class="jour-actions">
+            <button data-verrou="${r.id}" aria-label="Garder ce plat" class="${verrous.has(r.id) ? "principal" : ""}">🔒</button>
+            <button data-changer="${j}" aria-label="Changer ce plat">↻</button>
+          </div>
+        </article>`).join("")}`;
+
+    document.getElementById("m-tirer").onclick = () => generer([...verrous].filter((id) => menu.some((r) => r.id === id)));
+    const courses = document.getElementById("m-courses");
+    if (courses) courses.onclick = () => {
+      const p = panier();
+      for (const r of menu) {
+        if (p.some((x) => x.id === r.id)) continue;
+        const base = nombrePortions(r.portions);
+        p.push({ id: r.id, facteur: base ? (etat.portions_defaut || base) / base : 1 });
+      }
+      ecrireStock("courses", p);
+      majCompteur();
+      toast(`Ingrédients des ${menu.length} plats ajoutés, pour ${etat.portions_defaut || 4} personnes.`);
+    };
+    vue.querySelectorAll("[data-changer]").forEach((b) => b.onclick = () => remplacer(+b.dataset.changer));
+    vue.querySelectorAll("[data-verrou]").forEach((b) => b.onclick = () => {
+      const id = +b.dataset.verrou;
+      verrous.has(id) ? verrous.delete(id) : verrous.add(id);
+      ecrireStock("menu-verrous", [...verrous]);
+      dessiner();
+    });
+  }
+
+  if (!menu.length && candidats.length >= 2) generer();
+  else dessiner();
+}
+
 // ---------- Courses ----------
 async function vueCourses() {
   const p = panier();
@@ -725,6 +871,7 @@ async function routeur() {
     else if (h === "#/nouvelle") await vueEdition(null);
     else if (h === "#/courses") await vueCourses();
     else if (h === "#/reglages") await vueReglages();
+    else if (h === "#/menus") await vueMenus();
     else await vueListe();
   } catch (err) {
     vue.innerHTML = `<p class="vide">${echap(err.message)}</p>`;

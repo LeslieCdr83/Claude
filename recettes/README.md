@@ -88,6 +88,20 @@ Chaque fiche affiche les quantités pour 4 personnes. Les boutons + et − chang
 
 Après chaque import, Claude rédige aussi une version Thermomix TM7 et une version airfryer Ninja pour 4 personnes, avec les réglages de chaque étape. L'encart indique si la recette se fait entièrement, en partie ou pas du tout avec l'appareil. Pour des réglages plus précis, indique le modèle de ton airfryer : `MODELE_AIRFRYER=Ninja Foodi Dual Zone AF400EU`. Pour ne générer ces versions qu'à la demande, mets `ADAPTATION_AUTO=non`.
 
+## Menus de la semaine
+
+La page Menus tire 5 plats au hasard parmi tes recettes rédigées, du lundi au vendredi. Elle écarte les desserts, boissons et sauces, et évite que deux plats partagent la même base (pâtes, riz, poulet, poisson, légumineuses...) ou les mêmes tags. Un nouveau tirage évite aussi les plats du tirage précédent.
+
+- 🔒 garde un plat lors du prochain tirage.
+- ↻ change seulement le plat de ce jour.
+- « Tout ajouter aux courses » ajoute les 5 plats à la liste de courses, pour 4 personnes.
+
+Le tirage se fait dans l'appli, sans Claude : il est gratuit et immédiat.
+
+## Mettre à jour une recette avec un JSON Claude
+
+Sur une fiche, le bouton « Coller un JSON Claude » accepte une fiche complète ou une version TM7 et Ninja. L'appli reconnaît le type. Les champs absents gardent leur valeur : tu peux coller seulement les ingrédients ou seulement les étapes. La page « + » (nouvelle recette) permet aussi de créer une recette à partir d'un JSON.
+
 ## Instagram et Facebook
 
 Instagram et Facebook bloquent souvent le téléchargement sans connexion. Dans ce cas :
