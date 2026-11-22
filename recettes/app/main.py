@@ -15,6 +15,16 @@ from . import config, db, extraction, structuration
 STATIC = Path(__file__).parent / "static"
 
 app = FastAPI(title="Mes recettes")
+
+
+@app.middleware("http")
+async def sans_cache(request, call_next):
+    """Le navigateur revérifie l'interface à chaque ouverture : une mise à jour de l'appli
+    s'affiche sans Ctrl + F5, y compris dans l'appli installée sur le téléphone."""
+    reponse = await call_next(request)
+    if not request.url.path.startswith("/images/"):
+        reponse.headers["Cache-Control"] = "no-cache"
+    return reponse
 db.initialiser()
 
 

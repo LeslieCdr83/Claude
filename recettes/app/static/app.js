@@ -554,9 +554,11 @@ async function vueReglages() {
   document.getElementById("form-drive").addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
-      await api("/api/reglages", { method: "PUT", body: { drive: document.getElementById("drive").value } });
+      const saisi = document.getElementById("drive").value.trim();
+      const res = await api("/api/reglages", { method: "PUT", body: { drive: saisi } });
+      if (saisi && !res.drive) throw new Error("Le serveur n'a pas gardé le lien. Copie bien tout le dossier app, puis relance lancer-windows.bat.");
       etat = await api("/api/etat");
-      toast("Lien Leclerc Drive enregistré.");
+      toast(saisi ? "Lien Leclerc Drive enregistré." : "Lien Leclerc Drive retiré.");
       vueReglages();
     } catch (err) { toast(err.message); }
   });
@@ -910,6 +912,8 @@ async function routeur() {
   clearTimeout(minuterie);
   const h = location.hash || "#/";
   let m;
+  // Relit les réglages à chaque page : un changement fait sur un autre appareil s'applique tout de suite.
+  try { etat = await api("/api/etat"); } catch (_) {}
   try {
     if ((m = h.match(/^#\/recette\/(\d+)\/modifier$/))) await vueEdition(+m[1]);
     else if ((m = h.match(/^#\/recette\/(\d+)$/))) await vueRecette(+m[1]);
