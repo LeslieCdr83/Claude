@@ -94,11 +94,14 @@ Après chaque import, Claude rédige aussi, dans la même demande que la fiche, 
 
 ## Menus de la semaine
 
-La page Menus tire 5 plats au hasard parmi tes recettes rédigées, du lundi au vendredi. Elle écarte les desserts, boissons et sauces, et évite que deux plats partagent la même base (pâtes, riz, poulet, poisson, légumineuses...) ou les mêmes tags. Un nouveau tirage évite aussi les plats du tirage précédent.
+La page Menus montre les 7 jours de la semaine. Le tirage au hasard remplit les jours libres du lundi au vendredi avec des plats variés : il écarte les desserts, boissons et sauces, et évite deux plats de même base (pâtes, riz, poulet, poisson, légumineuses...) ou de mêmes tags. Un nouveau tirage évite aussi les plats du tirage précédent.
 
-- 🔒 garde un plat lors du prochain tirage.
-- ↻ change seulement le plat de ce jour.
-- « Tout ajouter aux courses » ajoute les 5 plats à la liste de courses, pour 4 personnes.
+Tu peux choisir toi-même le plat de n'importe quel jour, week-end compris :
+
+- depuis la page Menus : « Choisir » sur un jour libre, ou ✎ sur un jour rempli, puis cherche la recette ;
+- depuis une fiche : « 📅 Ajouter au menu », puis choisis le jour.
+
+Un plat choisi à la main est verrouillé 🔒 : un nouveau tirage le garde. Sur chaque jour, ↻ tire un autre plat au hasard et ✕ retire le plat. « Tout ajouter aux courses » ajoute les plats du menu à la liste de courses, pour 4 personnes.
 
 Le tirage se fait dans l'appli, sans Claude : il est gratuit et immédiat.
 

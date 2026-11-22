@@ -258,6 +258,7 @@ async function vueRecette(id) {
   const base = nombrePortions(r.portions);
   let portions = base ? (etat.portions_defaut || base) : base;
   const dansPanier = panier().some((p) => p.id === r.id);
+  const jourMenu = lireMenu().indexOf(r.id);
   const chiffres = [
     r.portions && `🍽 ${r.portions}`,
     r.temps_preparation && `🔪 Préparation ${r.temps_preparation}`,
@@ -285,6 +286,7 @@ async function vueRecette(id) {
         <div class="actions">
           <button id="b-favori">${r.favori ? "❤️ Favori" : "🤍 Favori"}</button>
           <button id="b-panier">${dansPanier ? "✓ Dans les courses" : "🛒 Ajouter aux courses"}</button>
+          <button id="b-menu">${jourMenu >= 0 ? `📅 Au menu ${JOURS[jourMenu].toLowerCase()}` : "📅 Ajouter au menu"}</button>
           <a class="bouton" href="#/recette/${r.id}/modifier">Modifier</a>
           <button id="b-coller">Coller un JSON Claude</button>
           ${r.statut === "erreur" ? `<button id="b-reimporter" class="principal">Réessayer l'import</button>` : ""}
@@ -361,6 +363,7 @@ async function vueRecette(id) {
   };
   document.getElementById("b-imprimer").onclick = () => window.print();
   document.getElementById("b-coller").onclick = () => ouvrirCollage(r);
+  document.getElementById("b-menu").onclick = () => ouvrirChoixJour(r);
   document.getElementById("b-supprimer").onclick = async () => {
     if (!confirm("Supprimer cette recette ?")) return;
     await api(`/api/recettes/${r.id}`, { method: "DELETE" });
@@ -480,6 +483,36 @@ async function ouvrirManuel(r, type) {
       routeur();
     } catch (err) { toast(err.message); }
   };
+}
+
+// ---------- Ajouter une recette au menu depuis sa fiche ----------
+async function ouvrirChoixJour(r) {
+  const zone = document.getElementById("manuel");
+  const titres = new Map((await api("/api/recettes")).map((x) => [x.id, x.titre]));
+  const menu = lireMenu();
+  const actuel = menu.indexOf(r.id);
+  zone.hidden = false;
+  zone.innerHTML = `
+    <h2>Ajouter au menu <button id="j-fermer" aria-label="Fermer">✕</button></h2>
+    <p class="aide">Choisis le jour. S'il y a déjà un plat, il est remplacé.</p>
+    <div class="jours-choix">
+      ${JOURS.map((nom, j) => {
+        const occupe = menu[j] != null && menu[j] !== r.id ? titres.get(menu[j]) : "";
+        return `<button data-jour="${j}" class="${j === actuel ? "principal" : ""}">
+          <strong>${nom}</strong><span class="aide">${j === actuel ? "ce plat" : occupe ? echap(occupe) : "libre"}</span></button>`;
+      }).join("")}
+    </div>
+    ${actuel >= 0 ? `<div class="actions"><button id="j-retirer" class="danger">Retirer du menu</button></div>` : ""}
+    <p class="aide"><a href="#/menus">Voir le menu de la semaine</a></p>`;
+  zone.scrollIntoView({ behavior: "smooth", block: "start" });
+  document.getElementById("j-fermer").onclick = () => { zone.hidden = true; zone.innerHTML = ""; };
+  zone.querySelectorAll("[data-jour]").forEach((b) => b.onclick = () => {
+    placerAuMenu(r.id, +b.dataset.jour);
+    toast(`Ajouté au menu : ${JOURS[+b.dataset.jour].toLowerCase()}.`);
+    routeur();
+  });
+  const retirer = document.getElementById("j-retirer");
+  if (retirer) retirer.onclick = () => { retirerDuMenu(r.id); toast("Retiré du menu."); routeur(); };
 }
 
 // ---------- Coller un JSON Claude sur une recette existante ----------
@@ -709,7 +742,8 @@ async function vueEdition(id) {
 }
 
 // ---------- Menus de la semaine ----------
-const JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi"];
+const JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
+const JOURS_TIRAGE = [0, 1, 2, 3, 4]; // le tirage au hasard remplit du lundi au vendredi
 // Pas des plats pour un repas complet.
 const HORS_MENU = /dessert|gâteau|gateau|boisson|cocktail|smoothie|sauce|apéro|apéritif|aperitif|goûter|gouter|biscuit|confiture|pâtisserie|patisserie/i;
 // Ingrédients présents partout : ils ne disent rien du plat.
@@ -767,90 +801,175 @@ function tirerMenus(candidats, nombre, imposes = [], eviter = new Set()) {
   return choisis;
 }
 
-async function vueMenus() {
-  const toutes = (await api("/api/recettes")).filter((r) => r.statut === "pret" && r.ingredients.length);
-  const plats = toutes.filter((r) => !HORS_MENU.test(r.tags.join(" ") + " " + r.titre));
-  const candidats = (plats.length >= 5 ? plats : toutes).map((r) => ({ ...r, _mots: motsCles(r) }));
-  const parId = new Map(candidats.map((r) => [r.id, r]));
-
-  // Le menu en cours reste affiché d'une visite à l'autre.
-  let menu = lireStock("menu-semaine", []).map((id) => parId.get(id)).filter(Boolean);
+// Le menu compte 7 cases (lundi à dimanche) : un identifiant de recette ou null.
+// Les anciens menus (liste de 5 identifiants) restent valables.
+function lireMenu() {
+  const m = lireStock("menu-semaine", []);
+  return Array.from({ length: 7 }, (_, j) => m[j] ?? null);
+}
+// Place une recette un jour donné. Elle quitte son ancien jour et devient verrouillée :
+// un nouveau tirage ne la remplace pas.
+function placerAuMenu(id, jour) {
+  const menu = lireMenu().map((x) => (x === id ? null : x));
+  menu[jour] = id;
+  ecrireStock("menu-semaine", menu);
   const verrous = new Set(lireStock("menu-verrous", []));
+  verrous.add(id);
+  ecrireStock("menu-verrous", [...verrous].filter((v) => menu.includes(v)));
+}
+function retirerDuMenu(id) {
+  ecrireStock("menu-semaine", lireMenu().map((x) => (x === id ? null : x)));
+}
 
-  function generer(garder = []) {
-    const imposes = menu.filter((r) => garder.includes(r.id));
-    const tirage = tirerMenus(candidats, Math.min(5, candidats.length), imposes, new Set(menu.map((r) => r.id)));
-    // Remet les plats gardés à leur jour d'origine.
-    const resultat = new Array(tirage.length);
-    menu.forEach((r, j) => { if (garder.includes(r.id) && j < resultat.length) resultat[j] = r; });
-    const libres = tirage.filter((r) => !garder.includes(r.id));
-    for (let j = 0; j < resultat.length; j++) if (!resultat[j]) resultat[j] = libres.shift();
-    menu = resultat.filter(Boolean);
-    ecrireStock("menu-semaine", menu.map((r) => r.id));
+async function vueMenus() {
+  const toutes = await api("/api/recettes");
+  const parId = new Map(toutes.map((r) => [r.id, { ...r, _mots: motsCles(r) }]));
+  const redigees = [...parId.values()].filter((r) => r.statut === "pret" && r.ingredients.length);
+  const plats = redigees.filter((r) => !HORS_MENU.test(r.tags.join(" ") + " " + r.titre));
+  const candidats = plats.length >= 5 ? plats : redigees;
+  const recette = (id) => parId.get(id);
+
+  let menu = lireMenu().map((id) => (id != null && parId.has(id) ? id : null));
+  const verrous = new Set(lireStock("menu-verrous", []));
+  let selecteur = null; // jour dont la liste de choix est ouverte
+
+  function sauver() {
+    ecrireStock("menu-semaine", menu);
+    ecrireStock("menu-verrous", [...verrous].filter((id) => menu.includes(id)));
+  }
+
+  // Remplit du lundi au vendredi les jours vides ou non verrouillés.
+  function tirer(jours = JOURS_TIRAGE) {
+    const aRemplir = jours.filter((j) => !(menu[j] != null && verrous.has(menu[j])));
+    const gardes = menu.filter((id, j) => id != null && !aRemplir.includes(j)).map(recette);
+    const eviter = new Set(menu.filter((id) => id != null));
+    const dispo = candidats.filter((r) => !gardes.some((g) => g.id === r.id));
+    const nouveaux = tirerMenus(dispo, gardes.length + aRemplir.length, gardes, eviter).slice(gardes.length);
+    aRemplir.forEach((j, k) => { menu[j] = nouveaux[k] ? nouveaux[k].id : null; });
+    if (!nouveaux.length) toast("Pas d'autre recette disponible.");
+    sauver();
     dessiner();
   }
 
   function remplacer(jour) {
-    const autres = menu.filter((_, j) => j !== jour);
-    const options = candidats.filter((r) => !menu.some((m) => m.id === r.id));
+    const autres = menu.filter((id, j) => id != null && j !== jour).map(recette);
+    const options = candidats.filter((r) => !menu.includes(r.id));
     if (!options.length) { toast("Pas d'autre recette disponible."); return; }
-    menu[jour] = tirerMenus(options, autres.length + 1, autres).pop();
-    ecrireStock("menu-semaine", menu.map((r) => r.id));
+    if (menu[jour] != null) verrous.delete(menu[jour]);
+    menu[jour] = tirerMenus(options, autres.length + 1, autres).pop().id;
+    sauver();
     dessiner();
   }
 
+  function listeChoix(filtre = "") {
+    const mots = filtre.toLowerCase().split(/\s+/).filter(Boolean);
+    const trouvees = [...parId.values()]
+      .filter((r) => r.statut !== "en_cours")
+      .filter((r) => mots.every((m) => (r.titre + " " + r.tags.join(" ")).toLowerCase().includes(m)))
+      .sort((a, b) => a.titre.localeCompare(b.titre, "fr"));
+    if (!trouvees.length) return `<p class="aide">Aucune recette ne correspond.</p>`;
+    return trouvees.map((r) => {
+      const jour = menu.indexOf(r.id);
+      return `<button type="button" data-choisir="${r.id}">${echap(r.titre)}${jour >= 0 ? ` <span class="aide">(${JOURS[jour].toLowerCase()})</span>` : ""}</button>`;
+    }).join("");
+  }
+
+  function ligneJour(j) {
+    const r = menu[j] != null ? recette(menu[j]) : null;
+    const ouvert = selecteur === j;
+    const carte = r ? `
+      <article class="jour">
+        <a href="#/recette/${r.id}"><img src="${imageRecette(r)}" alt="" loading="lazy"></a>
+        <div class="jour-infos">
+          <div class="aide">${JOURS[j]}</div>
+          <a href="#/recette/${r.id}"><strong>${echap(r.titre)}</strong></a>
+          <div class="aide">${echap([r.temps_preparation && "⏱ " + r.temps_preparation, r.tags.slice(0, 3).join(", ")].filter(Boolean).join(" · "))}</div>
+        </div>
+        <div class="jour-actions">
+          <button data-verrou="${r.id}" aria-label="Garder ce plat au prochain tirage" class="${verrous.has(r.id) ? "principal" : ""}">🔒</button>
+          <button data-changer="${j}" aria-label="Tirer un autre plat au hasard">↻</button>
+          <button data-ouvrir="${j}" aria-label="Choisir une recette" class="${ouvert ? "principal" : ""}">✎</button>
+          <button data-retirer="${j}" aria-label="Retirer ce plat">✕</button>
+        </div>
+      </article>` : `
+      <article class="jour vide-jour">
+        <div class="jour-infos"><div class="aide">${JOURS[j]}</div><span class="aide">Aucun plat</span></div>
+        <div class="jour-actions jour-actions-ligne">
+          <button data-ouvrir="${j}" class="${ouvert ? "principal" : ""}">Choisir</button>
+          <button data-changer="${j}" aria-label="Tirer un plat au hasard">🎲</button>
+        </div>
+      </article>`;
+    const choix = ouvert ? `
+      <div class="selecteur">
+        <input type="search" id="recherche-menu" placeholder="Chercher une recette..." autocomplete="off">
+        <div class="choix-liste" id="choix-liste">${listeChoix()}</div>
+      </div>` : "";
+    return carte + choix;
+  }
+
   function dessiner() {
-    if (candidats.length < 2) {
-      vue.innerHTML = `<p class="vide">Il faut au moins 2 recettes rédigées pour composer des menus. Tu en as ${candidats.length}.</p>`;
+    if (!parId.size) {
+      vue.innerHTML = `<p class="vide">Ajoute d'abord des recettes pour composer tes menus.</p>`;
       return;
     }
+    const remplis = menu.filter((id) => id != null).length;
     vue.innerHTML = `
       <section class="bloc">
         <h2>Menus de la semaine</h2>
-        <p class="aide">5 plats tirés au hasard parmi tes ${candidats.length} recettes, en évitant les plats trop proches. Les desserts, boissons et sauces sont écartés.${candidats.length < 5 ? " Ajoute des recettes pour remplir toute la semaine." : ""}</p>
+        <p class="aide">Le tirage choisit au hasard des plats variés pour les jours libres, du lundi au vendredi. Les desserts, boissons et sauces sont écartés. Tu peux aussi choisir toi-même le plat de chaque jour, week-end compris.</p>
         <div class="actions">
-          <button class="principal" id="m-tirer">${menu.length ? "Nouveau tirage" : "Tirer 5 menus"}</button>
-          ${menu.length ? `<button id="m-courses">🛒 Tout ajouter aux courses</button>` : ""}
+          <button class="principal" id="m-tirer" ${candidats.length ? "" : "disabled"}>${remplis ? "Nouveau tirage" : "Tirer les menus"}</button>
+          ${remplis ? `<button id="m-courses">🛒 Tout ajouter aux courses</button>` : ""}
         </div>
-        ${menu.length ? `<p class="aide">🔒 garde un plat au prochain tirage. ↻ change seulement ce jour.</p>` : ""}
+        ${remplis ? `<p class="aide">🔒 garde le plat au prochain tirage · ↻ autre plat au hasard · ✎ choisir · ✕ retirer</p>` : ""}
       </section>
-      ${menu.map((r, j) => `
-        <article class="jour">
-          <a href="#/recette/${r.id}"><img src="${imageRecette(r)}" alt="" loading="lazy"></a>
-          <div class="jour-infos">
-            <div class="aide">${JOURS[j]}</div>
-            <a href="#/recette/${r.id}"><strong>${echap(r.titre)}</strong></a>
-            <div class="aide">${echap([r.temps_preparation && "⏱ " + r.temps_preparation, r.tags.slice(0, 3).join(", ")].filter(Boolean).join(" · "))}</div>
-          </div>
-          <div class="jour-actions">
-            <button data-verrou="${r.id}" aria-label="Garder ce plat" class="${verrous.has(r.id) ? "principal" : ""}">🔒</button>
-            <button data-changer="${j}" aria-label="Changer ce plat">↻</button>
-          </div>
-        </article>`).join("")}`;
+      ${JOURS.map((_, j) => ligneJour(j)).join("")}`;
 
-    document.getElementById("m-tirer").onclick = () => generer([...verrous].filter((id) => menu.some((r) => r.id === id)));
+    document.getElementById("m-tirer").onclick = () => tirer();
     const courses = document.getElementById("m-courses");
     if (courses) courses.onclick = () => {
       const p = panier();
-      for (const r of menu) {
-        if (p.some((x) => x.id === r.id)) continue;
-        const base = nombrePortions(r.portions);
-        p.push({ id: r.id, facteur: base ? (etat.portions_defaut || base) / base : 1 });
+      for (const id of menu) {
+        if (id == null || p.some((x) => x.id === id)) continue;
+        const base = nombrePortions(recette(id).portions);
+        p.push({ id, facteur: base ? (etat.portions_defaut || base) / base : 1 });
       }
       ecrireStock("courses", p);
       majCompteur();
-      toast(`Ingrédients des ${menu.length} plats ajoutés, pour ${etat.portions_defaut || 4} personnes.`);
+      toast(`Ingrédients des ${remplis} plats ajoutés, pour ${etat.portions_defaut || 4} personnes.`);
     };
     vue.querySelectorAll("[data-changer]").forEach((b) => b.onclick = () => remplacer(+b.dataset.changer));
+    vue.querySelectorAll("[data-retirer]").forEach((b) => b.onclick = () => { menu[+b.dataset.retirer] = null; sauver(); dessiner(); });
+    vue.querySelectorAll("[data-ouvrir]").forEach((b) => b.onclick = () => {
+      selecteur = selecteur === +b.dataset.ouvrir ? null : +b.dataset.ouvrir;
+      dessiner();
+      const champ = document.getElementById("recherche-menu");
+      if (champ) champ.focus();
+    });
     vue.querySelectorAll("[data-verrou]").forEach((b) => b.onclick = () => {
       const id = +b.dataset.verrou;
       verrous.has(id) ? verrous.delete(id) : verrous.add(id);
-      ecrireStock("menu-verrous", [...verrous]);
+      sauver();
       dessiner();
     });
+    const champ = document.getElementById("recherche-menu");
+    if (champ) {
+      const brancher = () => document.querySelectorAll("[data-choisir]").forEach((b) => b.onclick = () => {
+        const id = +b.dataset.choisir;
+        menu = menu.map((x) => (x === id ? null : x));
+        menu[selecteur] = id;
+        verrous.add(id);
+        selecteur = null;
+        sauver();
+        dessiner();
+      });
+      champ.addEventListener("input", () => { document.getElementById("choix-liste").innerHTML = listeChoix(champ.value); brancher(); });
+      brancher();
+    }
   }
 
-  if (!menu.length && candidats.length >= 2) generer();
+  // Première visite : tirage automatique si le menu est vide.
+  if (!menu.some((id) => id != null) && candidats.length >= 2) tirer();
   else dessiner();
 }
 
