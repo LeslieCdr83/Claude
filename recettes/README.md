@@ -27,6 +27,10 @@ Le premier lancement installe tout, en 2 à 5 minutes. Le navigateur s'ouvre ens
 
 Le premier import télécharge aussi le modèle de transcription (environ 500 Mo). Les imports suivants prennent 30 secondes à 2 minutes.
 
+## Mettre à jour l'appli
+
+Ferme la fenêtre noire, puis double-clique sur `mettre-a-jour.bat` dans le dossier `recettes`. Le script télécharge la dernière version et remplace les fichiers de l'appli. Il ne touche ni à `data` (tes recettes, ta liste, tes réglages) ni à `reglages.txt`.
+
 ## Connecter Claude
 
 L'appli a besoin de Claude pour rédiger les fiches. Tu choisis à chaque fois : l'encart d'import, la fiche et l'encart Thermomix et airfryer ont un bouton par mode. L'appli met en avant le dernier mode utilisé. Un bouton grisé indique un mode pas encore configuré. La page Réglages (icône ⚙) sert à enregistrer la clé API et à tester chaque mode.
