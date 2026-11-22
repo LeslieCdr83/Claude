@@ -253,3 +253,12 @@ def test_liste_de_courses_partagee():
     partage = client.get("/api/partage").json()
     assert partage["courses"] == [{"id": 1, "facteur": 1}] and partage["coches-courses"] == ["farine|g"]
     assert client.put("/api/partage/autre", json=[]).status_code == 404
+
+
+def test_champ_achat_garde_et_facultatif():
+    r = client.post("/api/recettes", json={"titre": "Brocolis", "ingredients": [
+        {"quantite": "300", "unite": "g", "nom": "brocolis finement hachés", "achat": "brocoli"}]}).json()
+    assert r["ingredients"][0]["achat"] == "brocoli"
+    ancien = json.dumps({"ingredients": [{"quantite": "1", "unite": "", "nom": "citron", "estimee": False}]})
+    maj = client.post(f"/api/recettes/{r['id']}/reponse", json={"type": "auto", "texte": ancien}).json()
+    assert maj["ingredients"][0]["achat"] == ""

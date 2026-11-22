@@ -647,12 +647,13 @@ async function vueEdition(id) {
   const lireIngr = () => [...zoneIngr.children].map((l) => ({
     quantite: l.children[0].value, unite: l.children[1].value, nom: l.children[2].value,
     estimee: l.dataset.estimee === "1" && l.children[0].value === l.dataset.qte,
+    achat: l.children[2].value === l.dataset.nom ? l.dataset.achat : "",
   }));
   const lireEtapes = () => [...zoneEtapes.children].map((l) => l.children[0].value);
 
   function dessiner() {
     zoneIngr.innerHTML = ingr.map((i, n) => `
-      <div class="ligne-ingr" data-estimee="${i.estimee ? "1" : ""}" data-qte="${echap(i.quantite)}">
+      <div class="ligne-ingr" data-estimee="${i.estimee ? "1" : ""}" data-qte="${echap(i.quantite)}" data-nom="${echap(i.nom)}" data-achat="${echap(i.achat || "")}">
         <input value="${echap(i.quantite)}" placeholder="${i.estimee ? "≈ " : ""}Qté" aria-label="Quantité${i.estimee ? " estimée" : ""}" ${i.estimee ? 'class="estimee"' : ""}>
         <input value="${echap(i.unite)}" placeholder="Unité" aria-label="Unité">
         <input value="${echap(i.nom)}" placeholder="Ingrédient" aria-label="Ingrédient">
@@ -855,12 +856,18 @@ async function vueMenus() {
 
 // ---------- Courses ----------
 // Terme de recherche simple : "jambon blanc (en tranches épaisses)" devient "jambon blanc".
+// Pour les recettes sans champ "achat" : retire la préparation du nom.
+// "brocolis finement hachés" devient "brocolis", "jambon blanc coupé en dés" devient "jambon blanc".
+const PREPARATION = /\s(bien\s)?(finement|grossièrement|hach[ée]e?s?|émincée?s?|ciselée?s?|coupée?s?|en dés|en rondelles|en lamelles|en morceaux|en cubes|en tranches|en julienne|pelée?s?|épépinée?s?|égouttée?s?|écrasée?s?|concassée?s?|battue?s?|fondue?s?|ramollie?s?|tièdes?|froide?s?|cuite?s?|à température ambiante|mûre?s?|frais du jour)(?=\s|$).*$/i;
 function termeRecherche(nom) {
-  return nom.replace(/\(.*?\)/g, " ").split(/[,;:]| ou | pour /)[0]
-    .replace(/(^|\s)(bio|maison|facultatif|selon ton goût)(?=\s|$)/gi, " ")
-    .replace(/\s+/g, " ").trim() || nom;
+  let t = nom.replace(/\(.*?\)/g, " ").split(/[,;:]| ou | pour /)[0];
+  t = t.replace(/^\s*(le |la |les |l'|du |de la |des |zeste d'une? |jus d'une? |zeste de |jus de |gousses? d'|gousses? de |brins? de |feuilles? de )/i, "");
+  t = t.replace(PREPARATION, "");
+  t = t.replace(/(^|\s)(bio|maison|facultatif|selon ton goût)(?=\s|$)/gi, " ");
+  return t.replace(/\s+/g, " ").trim() || nom;
 }
-const lienDrive = (nom) => etat.drive.replace("{q}", encodeURIComponent(termeRecherche(nom)));
+const nomAchat = (i) => (i.achat || "").trim() || termeRecherche(i.nom);
+const lienDrive = (terme) => etat.drive.replace("{q}", encodeURIComponent(terme));
 
 async function vueCourses() {
   const p = panier();
@@ -875,9 +882,10 @@ async function vueCourses() {
   const lignes = new Map();
   for (const r of recettes) {
     for (const i of r.ingredients) {
-      const cle = `${i.nom.trim().toLowerCase()}|${(i.unite || "").trim().toLowerCase()}`;
+      const produit = nomAchat(i);
+      const cle = `${produit.toLowerCase()}|${(i.unite || "").trim().toLowerCase()}`;
       const n = versNombre(i.quantite);
-      const l = lignes.get(cle) || { nom: i.nom.trim(), unite: i.unite, total: 0, autres: [], estimee: false };
+      const l = lignes.get(cle) || { nom: produit, unite: i.unite, total: 0, autres: [], estimee: false };
       if (i.estimee && i.quantite) l.estimee = true;
       if (n != null) l.total += n * r.facteur;
       else if (i.quantite) l.autres.push(i.quantite);

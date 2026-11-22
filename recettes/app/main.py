@@ -59,6 +59,7 @@ class Ingredient(BaseModel):
     unite: str = ""
     nom: str = ""
     estimee: bool = False
+    achat: str = ""  # produit à chercher en magasin, sans préparation
 
 
 class Reglages(BaseModel):

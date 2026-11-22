@@ -24,8 +24,9 @@ SCHEMA_RECETTE = {
                     "unite": {"type": "string"},
                     "nom": {"type": "string"},
                     "estimee": {"type": "boolean"},
+                    "achat": {"type": "string"},
                 },
-                "required": ["quantite", "unite", "nom", "estimee"],
+                "required": ["quantite", "unite", "nom", "estimee", "achat"],
                 "additionalProperties": False,
             },
         },
@@ -55,6 +56,10 @@ un ingrédient qui se compte à la pièce (œufs, citrons, oignons).
 1 œuf), multipliée par le nombre de portions. Mets alors "estimee" à true. Sinon "estimee" vaut false.
 - Exception : sel, poivre, épices, herbes séchées en pincée, huile ou beurre de cuisson en petite \
 quantité, eau de cuisson. Pour ceux-là, laisse "quantite" et "unite" vides et "estimee" à false.
+- "achat" donne le produit à chercher en magasin, au plus simple : sans quantité, sans préparation, \
+sans détail de découpe. Par exemple « brocoli » pour « brocolis finement hachés », « jambon blanc » \
+pour « jambon blanc coupé en dés », « citron » pour « zeste d'un citron bio ». Garde ce qui désigne \
+un autre produit : « crème fraîche », « gruyère râpé », « pâte feuilletée ». Vide pour l'eau.
 - Écris des étapes courtes, dans l'ordre, une action principale par étape.
 - Propose 2 à 5 tags en minuscules : type de plat, régime, difficulté, temps.
 - Mets dans "notes" les astuces du créateur et ce qui reste incertain.
@@ -252,6 +257,10 @@ un ingrédient qui se compte à la pièce (œufs, citrons, oignons).
 1 œuf), multipliée par le nombre de portions. Mets alors "estimee" à true. Sinon "estimee" vaut false.
 - Exception : sel, poivre, épices, herbes séchées en pincée, huile ou beurre de cuisson en petite \
 quantité, eau de cuisson. Pour ceux-là, laisse "quantite" et "unite" vides et "estimee" à false.
+- "achat" donne le produit à chercher en magasin, au plus simple : sans quantité, sans préparation, \
+sans détail de découpe. Par exemple « brocoli » pour « brocolis finement hachés », « jambon blanc » \
+pour « jambon blanc coupé en dés », « citron » pour « zeste d'un citron bio ». Garde ce qui désigne \
+un autre produit : « crème fraîche », « gruyère râpé », « pâte feuilletée ». Vide pour l'eau.
 - Mets cette liste dans "ingredients" et "portions" = {personnes}. Les étapes des deux appareils \
 utilisent ces quantités.
 
@@ -376,8 +385,10 @@ def valider(valeur, schema: dict, chemin: str = "réponse"):
         for cle, sous_schema in schema.get("properties", {}).items():
             if cle in valeur:
                 sortie[cle] = valider(valeur[cle], sous_schema, f"{chemin}.{cle}")
-            elif sous_schema.get("type") == "boolean" and cle == "estimee":
-                sortie[cle] = False
+            elif cle == "estimee":
+                sortie[cle] = False  # champs ajoutés après coup : facultatifs dans un JSON collé
+            elif cle == "achat":
+                sortie[cle] = ""
             elif cle in schema.get("required", []):
                 raise ErreurStructuration(f"Champ manquant : {chemin}.{cle}")
         return sortie
