@@ -75,7 +75,7 @@ function imageRecette(r) {
 
 // ---------- Liste ----------
 async function vueListe() {
-  const alerte = etat.cle_claude ? "" : `<p class="alerte">Claude n'est pas encore connecté. L'import fonctionne déjà : il garde la vidéo, la légende et la transcription. Connecte Claude (abonnement ou clé, voir le README) pour obtenir la fiche complète.</p>`;
+  const alerte = claudeDispo() ? "" : `<p class="alerte">Claude n'est pas encore connecté. L'import fonctionne déjà : il garde la vidéo, la légende et la transcription. Choisis comment utiliser Claude dans <a href="#/reglages">Réglages</a>.</p>`;
   vue.innerHTML = `
     <section class="import">
       <h2>Ajouter une recette</h2>
@@ -171,8 +171,17 @@ async function lancerImport(texte) {
 }
 
 // ---------- Fiche ----------
-// Message gardé d'un import fait avant l'ajout de la clé.
-const cleAjoutee = (r) => etat.cle_claude && r.statut === "brouillon" && (r.erreur || "").startsWith("Pas de clé Claude");
+const modeManuel = () => etat.mode === "manuel";
+const claudeDispo = () => etat.cle_claude || modeManuel();
+
+// Le message d'un import fait avant de connecter Claude est remplacé par la marche à suivre actuelle.
+function messageFiche(r) {
+  const ancien = /^(Pas de clé Claude|Claude n'est pas connecté)/.test(r.erreur || "");
+  if (r.statut !== "brouillon" || !ancien) return r.erreur;
+  if (modeManuel()) return "Clique sur « Analyser avec l'appli Claude » pour obtenir la fiche.";
+  if (etat.cle_claude) return "Claude est connecté. Clique sur « Analyser avec Claude » pour rédiger la fiche de cette recette.";
+  return r.erreur;
+}
 
 async function vueRecette(id) {
   let r;
@@ -194,10 +203,11 @@ async function vueRecette(id) {
   ].filter(Boolean).map((c) => `<span>${echap(c)}</span>`).join("");
 
   const boutonAnalyser = r.source_url && (r.statut === "brouillon" || r.statut === "pret")
-    ? `<button id="b-analyser" ${etat.cle_claude ? "" : "disabled title='Connecte Claude (voir le README)'"}>${r.statut === "pret" ? "Réanalyser" : "Analyser avec Claude"}</button>` : "";
+    ? `<button id="b-analyser" ${claudeDispo() ? "" : "disabled title='Connecte Claude dans Réglages'"}>${modeManuel() ? "Analyser avec l'appli Claude" : r.statut === "pret" ? "Réanalyser" : "Analyser avec Claude"}</button>` : "";
 
   vue.innerHTML = `
-    ${r.erreur ? `<p class="alerte">${echap(cleAjoutee(r) ? "Claude est connecté. Clique sur « Analyser avec Claude » pour rédiger la fiche de cette recette." : r.erreur)}</p>` : ""}
+    ${r.erreur ? `<p class="alerte">${echap(messageFiche(r))}</p>` : ""}
+    <section class="bloc" id="manuel" hidden></section>
     <div class="fiche-entete">
       <img src="${imageRecette(r)}" alt="">
       <div>
@@ -289,6 +299,7 @@ async function vueRecette(id) {
   };
   const ba = document.getElementById("b-analyser");
   if (ba) ba.onclick = async () => {
+    if (modeManuel()) return ouvrirManuel(r, "fiche");
     try { await api(`/api/recettes/${r.id}/analyser`, { method: "POST" }); routeur(); } catch (err) { toast(err.message); }
   };
   const br = document.getElementById("b-reimporter");
@@ -311,8 +322,8 @@ function dessinerAppareils(r, onglet = "thermomix") {
     zone.innerHTML = `
       <h2>Thermomix TM7 et airfryer Ninja</h2>
       <p class="aide">Claude rédige les deux versions pour ${etat.portions_defaut || 4} personnes, avec les réglages de chaque appareil.</p>
-      <div class="actions"><button class="principal" id="b-adapter" ${etat.cle_claude && possible ? "" : "disabled"}>Adapter la recette</button></div>
-      ${etat.cle_claude ? "" : `<p class="aide">Connecte Claude pour utiliser cette fonction (voir le README).</p>`}`;
+      <div class="actions"><button class="principal" id="b-adapter" ${claudeDispo() && possible ? "" : "disabled"}>${modeManuel() ? "Adapter avec l'appli Claude" : "Adapter la recette"}</button></div>
+      ${claudeDispo() ? "" : `<p class="aide">Connecte Claude dans <a href="#/reglages">Réglages</a> pour utiliser cette fonction.</p>`}`;
   } else {
     const ap = a[onglet] || {};
     const pastille = (v, icone) => v ? `<span class="reglage">${icone} ${echap(v)}</span>` : "";
@@ -332,11 +343,12 @@ function dessinerAppareils(r, onglet = "thermomix") {
           <div class="reglages">${pastille(e.mode, "⚙️")}${pastille(e.temps, "⏱")}${pastille(e.temperature, "🌡")}${pastille(e.vitesse, "🌀")}</div>
         </li>`).join("")}</ol>` : ""}
       ${ap.conseils ? `<p class="aide">💡 ${echap(ap.conseils)}</p>` : ""}
-      <div class="actions"><button id="b-adapter" ${etat.cle_claude ? "" : "disabled"}>Régénérer</button></div>`;
+      <div class="actions"><button id="b-adapter" ${claudeDispo() ? "" : "disabled"}>${modeManuel() ? "Régénérer avec l'appli Claude" : "Régénérer"}</button></div>`;
     zone.querySelectorAll("[data-onglet]").forEach((b) => b.onclick = () => dessinerAppareils(r, b.dataset.onglet));
   }
   const bouton = document.getElementById("b-adapter");
   if (bouton) bouton.onclick = async () => {
+    if (modeManuel()) return ouvrirManuel(r, "adaptation");
     bouton.disabled = true;
     bouton.innerHTML = `<span class="chargement"></span> Adaptation en cours, 20 à 60 s`;
     try {
@@ -347,6 +359,120 @@ function dessinerAppareils(r, onglet = "thermomix") {
       toast(err.message);
       dessinerAppareils(r, onglet);
     }
+  };
+}
+
+// ---------- Mode manuel : copier-coller avec l'appli Claude ----------
+async function ouvrirManuel(r, type) {
+  const zone = document.getElementById("manuel");
+  let demande;
+  try { demande = await api(`/api/recettes/${r.id}/demande?type=${type}`); } catch (err) { toast(err.message); return; }
+  const titre = type === "fiche" ? "Analyser avec l'appli Claude" : "Adapter avec l'appli Claude";
+  zone.hidden = false;
+  zone.innerHTML = `
+    <h2>${titre} <button id="m-fermer" aria-label="Fermer">✕</button></h2>
+    <ol class="etapes">
+      <li>Copie la demande.
+        <div class="actions"><button class="principal" id="m-copier">Copier la demande</button></div>
+        <details><summary>Voir la demande</summary><textarea id="m-demande" readonly rows="8">${echap(demande.texte)}</textarea></details>
+      </li>
+      <li>Ouvre une nouvelle conversation dans l'appli Claude ou sur <a href="https://claude.ai/new" target="_blank" rel="noopener">claude.ai</a> et colle la demande.
+        ${demande.images.length ? `<p class="aide">Pour que Claude lise le texte affiché dans la vidéo, joins aussi les captures. Appui long ou clic droit pour les enregistrer.</p>
+        <div class="captures">${demande.images.map((u) => `<a href="${encodeURI(u)}" download target="_blank"><img src="${encodeURI(u)}" alt="Capture"></a>`).join("")}</div>` : ""}
+      </li>
+      <li>Copie toute la réponse de Claude et colle-la ici.
+        <textarea id="m-reponse" rows="8" placeholder='{"titre": "...", ...}'></textarea>
+        <div class="actions"><button class="principal" id="m-valider">Enregistrer la réponse</button></div>
+      </li>
+    </ol>`;
+  zone.scrollIntoView({ behavior: "smooth", block: "start" });
+  document.getElementById("m-fermer").onclick = () => { zone.hidden = true; zone.innerHTML = ""; };
+  document.getElementById("m-copier").onclick = async () => {
+    try { await navigator.clipboard.writeText(demande.texte); toast("Demande copiée. Colle-la dans Claude."); }
+    catch (_) {
+      const champ = document.getElementById("m-demande");
+      champ.closest("details").open = true;
+      champ.select();
+      toast("Copie automatique impossible : le texte est sélectionné, copie-le à la main.");
+    }
+  };
+  document.getElementById("m-valider").onclick = async () => {
+    const texte = document.getElementById("m-reponse").value;
+    if (!texte.trim()) { toast("Colle d'abord la réponse de Claude."); return; }
+    try {
+      await api(`/api/recettes/${r.id}/reponse`, { method: "POST", body: { type, texte } });
+      toast(type === "fiche" ? "Fiche enregistrée." : "Versions appareils enregistrées.");
+      routeur();
+    } catch (err) { toast(err.message); }
+  };
+}
+
+// ---------- Réglages ----------
+const MODES = [
+  { cle: "abonnement", titre: "Abonnement Claude (Claude Code)", texte: "Automatique, sans jetons facturés. Il faut un abonnement Pro ou Max, et Claude Code installé et connecté sur cet ordinateur." },
+  { cle: "api", titre: "Clé API Claude", texte: "Automatique. Facturé à l'usage : environ 5 à 12 centimes par recette, fiche et appareils compris." },
+  { cle: "manuel", titre: "Manuel, avec l'appli Claude", texte: "Fonctionne avec n'importe quel compte Claude, même gratuit. Tu copies une demande dans Claude, puis tu recolles sa réponse ici." },
+];
+
+async function vueReglages() {
+  const r = await api("/api/reglages");
+  vue.innerHTML = `
+    <form class="bloc formulaire" id="form-reglages">
+      <h2>Connexion à Claude</h2>
+      <p class="aide">${echap(r.etat)}</p>
+      <div class="modes">
+        ${MODES.map((m) => `
+          <label class="mode ${r.mode === m.cle ? "actif" : ""}">
+            <input type="radio" name="mode" value="${m.cle}" ${r.mode === m.cle ? "checked" : ""}>
+            <span><strong>${m.titre}</strong><br><span class="aide">${m.texte}</span>
+            ${m.cle === "abonnement" ? `<br><span class="aide">${r.claude_code ? "✓ Claude Code trouvé sur cet ordinateur." : "✗ Claude Code introuvable. Installe-le (voir le README), puis relance l'appli."}</span>` : ""}</span>
+          </label>`).join("")}
+      </div>
+      <div id="zone-cle">
+        <label for="cle">Clé API</label>
+        <input id="cle" type="password" autocomplete="off" placeholder="${r.cle_api ? echap(r.cle_api) : "sk-ant-..."}">
+        <p class="aide">${r.cle_api ? "Une clé est enregistrée. Laisse le champ vide pour la garder." : "Crée une clé sur console.anthropic.com."}</p>
+        ${r.cle_api ? `<button type="button" id="effacer-cle" class="danger">Effacer la clé</button>` : ""}
+      </div>
+      <div class="actions">
+        <button class="principal" type="submit">Enregistrer</button>
+        <button type="button" id="tester">Tester la connexion</button>
+      </div>
+      <p class="aide" id="resultat-test"></p>
+    </form>`;
+
+  const form = document.getElementById("form-reglages");
+  const majZoneCle = () => {
+    const mode = form.querySelector("input[name=mode]:checked")?.value;
+    document.getElementById("zone-cle").hidden = mode !== "api";
+    form.querySelectorAll(".mode").forEach((l) => l.classList.toggle("actif", l.querySelector("input").checked));
+  };
+  form.querySelectorAll("input[name=mode]").forEach((i) => i.addEventListener("change", majZoneCle));
+  majZoneCle();
+
+  async function enregistrer(extra = {}) {
+    const mode = form.querySelector("input[name=mode]:checked")?.value;
+    const cle = document.getElementById("cle").value.trim();
+    await api("/api/reglages", { method: "PUT", body: { mode, ...(cle ? { cle_api: cle } : {}), ...extra } });
+    etat = await api("/api/etat");
+  }
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try { await enregistrer(); toast("Réglages enregistrés."); vueReglages(); } catch (err) { toast(err.message); }
+  });
+  const effacer = document.getElementById("effacer-cle");
+  if (effacer) effacer.onclick = async () => {
+    if (!confirm("Effacer la clé API enregistrée ?")) return;
+    try { await enregistrer({ effacer_cle: true }); toast("Clé effacée."); vueReglages(); } catch (err) { toast(err.message); }
+  };
+  document.getElementById("tester").onclick = async () => {
+    const sortie = document.getElementById("resultat-test");
+    sortie.innerHTML = `<span class="chargement"></span> Test en cours...`;
+    try {
+      await enregistrer();
+      const res = await api("/api/reglages/tester", { method: "POST" });
+      sortie.textContent = (res.ok ? "✓ " : "✗ ") + res.message;
+    } catch (err) { sortie.textContent = "✗ " + err.message; }
   };
 }
 
@@ -494,6 +620,7 @@ async function routeur() {
     else if ((m = h.match(/^#\/recette\/(\d+)$/))) await vueRecette(+m[1]);
     else if (h === "#/nouvelle") await vueEdition(null);
     else if (h === "#/courses") await vueCourses();
+    else if (h === "#/reglages") await vueReglages();
     else await vueListe();
   } catch (err) {
     vue.innerHTML = `<p class="vide">${echap(err.message)}</p>`;

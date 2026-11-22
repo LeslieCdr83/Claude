@@ -128,7 +128,7 @@ def test_structurer_appelle_claude(monkeypatch, tmp_path):
                                    content=[SimpleNamespace(type="text", text=json.dumps(FICHE))])
 
     class FauxClient:
-        def __init__(self):
+        def __init__(self, **kwargs):
             self.beta = SimpleNamespace(messages=FauxMessages())
 
     import anthropic
@@ -166,3 +166,36 @@ def test_consignes_adaptation(monkeypatch):
     assert "pour 4 personnes" in texte and "TM7" in texte and "Ninja" in texte
     assert "- 200 g spaghetti" in texte and "{" not in texte.split("<recette>")[0]
     assert envoye["s"] is structuration.SCHEMA_ADAPTATIONS
+
+
+def test_reglages_depuis_l_appli():
+    assert client.get("/api/reglages").json()["mode"] == "api"
+    assert client.put("/api/reglages", json={"cle_api": "mauvaise"}).status_code == 400
+    r = client.put("/api/reglages", json={"mode": "abonnement", "cle_api": "sk-ant-api03-abcdefghijklmnop1234"}).json()
+    assert r["mode"] == "abonnement" and r["cle_api"].startswith("sk-ant-api") and "1234" in r["cle_api"]
+    assert main.config.cle_api() == "sk-ant-api03-abcdefghijklmnop1234"
+    r = client.put("/api/reglages", json={"mode": "manuel", "effacer_cle": True}).json()
+    assert r["mode"] == "manuel" and r["cle_api"] == ""
+    assert client.get("/api/etat").json()["cle_claude"] is False
+    client.put("/api/reglages", json={"mode": "api"})
+
+
+def test_mode_manuel_aller_retour():
+    r = client.post("/api/recettes", json={"titre": "Brouillon"}).json()
+    main.db.mettre_a_jour(r["id"], legende="200 g de riz", transcription="on cuit le riz", statut="brouillon")
+    demande = client.get(f"/api/recettes/{r['id']}/demande", params={"type": "fiche"}).json()
+    assert "200 g de riz" in demande["texte"] and '"est_une_recette"' in demande["texte"]
+
+    assert client.post(f"/api/recettes/{r['id']}/reponse", json={"type": "fiche", "texte": "désolé"}).status_code == 400
+    incomplet = json.dumps({"titre": "Riz"})
+    rep = client.post(f"/api/recettes/{r['id']}/reponse", json={"type": "fiche", "texte": incomplet})
+    assert rep.status_code == 400 and "manquant" in rep.json()["detail"]
+
+    colle = "Voici la fiche :\n```json\n" + json.dumps({**FICHE, "titre": "Riz nature", "en_trop": 1}) + "\n```"
+    fiche = client.post(f"/api/recettes/{r['id']}/reponse", json={"type": "fiche", "texte": colle}).json()
+    assert fiche["titre"] == "Riz nature" and fiche["statut"] == "pret"
+
+    demande = client.get(f"/api/recettes/{r['id']}/demande", params={"type": "adaptation"}).json()
+    assert "TM7" in demande["texte"]
+    maj = client.post(f"/api/recettes/{r['id']}/reponse", json={"type": "adaptation", "texte": json.dumps(ADAPTATIONS)}).json()
+    assert maj["adaptations"]["thermomix"]["faisable"] == "oui"

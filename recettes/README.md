@@ -29,7 +29,23 @@ Le premier import télécharge aussi le modèle de transcription (environ 500 Mo
 
 ## Connecter Claude
 
-L'appli a besoin de Claude pour rédiger les fiches. Deux façons de faire :
+L'appli a besoin de Claude pour rédiger les fiches. Choisis le mode sur la page Réglages de l'appli (icône ⚙ en haut à droite). Le bouton « Tester la connexion » vérifie que tout marche.
+
+| Mode | Coût | Fonctionnement |
+|---|---|---|
+| Abonnement Claude (Claude Code) | Inclus dans Pro ou Max | Automatique |
+| Clé API | 5 à 12 centimes par recette | Automatique |
+| Manuel, avec l'appli Claude | Gratuit, tout compte Claude | Copier-coller |
+
+### Mode manuel
+
+Sur une recette, clique sur « Analyser avec l'appli Claude ». L'appli prépare la demande :
+
+1. Clique sur « Copier la demande ».
+2. Colle-la dans une nouvelle conversation de l'appli Claude ou de claude.ai. Joins les captures de la vidéo pour que Claude lise les quantités affichées à l'écran.
+3. Copie la réponse de Claude, colle-la dans l'appli et clique sur « Enregistrer la réponse ».
+
+L'appli vérifie la réponse avant de l'enregistrer. Le même principe sert pour les versions Thermomix et airfryer.
 
 ### Avec ton abonnement Claude (sans payer de jetons)
 
@@ -48,8 +64,7 @@ curl -fsSL https://claude.ai/install.sh | bash
 ```
 
 2. Ferme le terminal, ouvre-en un nouveau et tape `claude`. Choisis la connexion avec ton compte Claude et valide dans le navigateur. Tape ensuite `/exit`.
-3. Si `reglages.txt` contient une clé après `ANTHROPIC_API_KEY=`, efface-la, ou ajoute la ligne `MODE_CLAUDE=abonnement`.
-4. Relance l'appli. La fenêtre noire affiche « Claude : abonnement via Claude Code ».
+3. Relance l'appli, ouvre Réglages, choisis « Abonnement Claude » et clique sur « Tester la connexion ».
 
 Une analyse prend 20 à 40 secondes, l'adaptation TM7 et Ninja autant.
 
@@ -57,9 +72,7 @@ Une analyse prend 20 à 40 secondes, l'adaptation TM7 et Ninja autant.
 
 1. Crée un compte sur https://console.anthropic.com et ajoute quelques dollars de crédit.
 2. Crée une clé API.
-3. Dans le dossier `recettes`, fais une copie de `reglages-exemple.txt` et renomme-la `reglages.txt`.
-4. Ouvre `reglages.txt` avec un éditeur de texte et colle ta clé après `ANTHROPIC_API_KEY=`.
-5. Ferme la fenêtre noire et relance l'appli.
+3. Dans Réglages, choisis « Clé API Claude », colle la clé et clique sur « Enregistrer ».
 
 Coût estimé : 3 à 8 centimes par recette avec Claude Opus 5.5 (4 $ par million de jetons en entrée, 20 $ en sortie, d'après la grille tarifaire d'Anthropic), plus 2 à 4 centimes pour l'adaptation aux appareils. Pour réduire le coût, ajoute la ligne `MODELE_CLAUDE=claude-haiku-5-5` dans `reglages.txt`.
 

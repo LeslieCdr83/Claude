@@ -67,11 +67,14 @@ def _bloc_image(chemin: Path) -> dict | None:
     return {"type": "image", "source": {"type": "base64", "media_type": type_media, "data": donnees}}
 
 
+def texte_fiche(titre: str, legende: str, transcription: str) -> str:
+    return (f"{CONSIGNES}\n\n<titre>{titre}</titre>\n\n<legende>\n{legende or '(vide)'}\n</legende>\n\n"
+            f"<transcription>\n{transcription or '(aucune voix détectée)'}\n</transcription>")
+
+
 def structurer(titre: str, legende: str, transcription: str, images: list[Path]) -> dict:
     """Appelle Claude et renvoie un dictionnaire conforme à SCHEMA_RECETTE."""
-    texte = (f"{CONSIGNES}\n\n<titre>{titre}</titre>\n\n<legende>\n{legende or '(vide)'}\n</legende>\n\n"
-             f"<transcription>\n{transcription or '(aucune voix détectée)'}\n</transcription>")
-    return _appeler_claude(texte, SCHEMA_RECETTE, images[:10])
+    return _appeler_claude(texte_fiche(titre, legende, transcription), SCHEMA_RECETTE, images[:10])
 
 
 def _appeler_claude(texte: str, schema: dict, images: list[Path] = ()) -> dict:
@@ -90,7 +93,7 @@ def _appeler_api(texte: str, schema: dict, images: list[Path]) -> dict:
 
     contenu = [b for b in (_bloc_image(c) for c in images) if b]
     contenu.append({"type": "text", "text": texte})
-    client = anthropic.Anthropic()
+    client = anthropic.Anthropic(api_key=config.cle_api())
     try:
         reponse = client.beta.messages.create(
             model=config.MODELE_CLAUDE,
@@ -249,6 +252,10 @@ Pour chaque appareil :
 
 def adapter(recette: dict) -> dict:
     """Renvoie {"thermomix": {...}, "airfryer": {...}} pour une recette déjà structurée."""
+    return _appeler_claude(texte_adaptation(recette), SCHEMA_ADAPTATIONS)
+
+
+def texte_adaptation(recette: dict) -> str:
     ingredients = "\n".join(
         "- " + " ".join(x for x in (i.get("quantite", ""), i.get("unite", ""), i.get("nom", "")) if x)
         for i in recette.get("ingredients", [])
@@ -262,4 +269,100 @@ def adapter(recette: dict) -> dict:
         + f"\n\n<recette>\nTitre : {recette.get('titre') or ''}\nPortions : {recette.get('portions') or ''}\n"
         + f"Ingrédients :\n{ingredients}\n\nÉtapes :\n{etapes}\n\nNotes : {recette.get('notes') or ''}\n</recette>"
     )
-    return _appeler_claude(texte, SCHEMA_ADAPTATIONS)
+    return texte
+
+
+# ---------- Mode manuel : copier-coller avec l'appli Claude ----------
+
+SCHEMAS = {"fiche": SCHEMA_RECETTE, "adaptation": SCHEMA_ADAPTATIONS}
+
+
+def demande_manuelle(type_demande: str, recette: dict) -> str:
+    """Texte à coller dans l'appli Claude. La réponse attendue est un JSON conforme au schéma."""
+    if type_demande == "fiche":
+        texte = texte_fiche(recette.get("titre") or "", recette.get("legende") or "",
+                            recette.get("transcription") or "")
+        texte += ("\n\nSi des captures d'écran de la vidéo sont jointes, lis le texte qu'elles affichent "
+                  "(quantités, ingrédients).")
+    else:
+        texte = texte_adaptation(recette)
+    schema = json.dumps(SCHEMAS[type_demande], ensure_ascii=False)
+    return (texte + "\n\nRéponds uniquement avec un objet JSON valide qui respecte ce schéma JSON, "
+            f"sans texte avant ni après :\n{schema}")
+
+
+def lire_reponse_manuelle(type_demande: str, texte: str) -> dict:
+    """Extrait le JSON de la réponse collée (avec ou sans bloc ```json) et le vérifie."""
+    texte = (texte or "").strip()
+    debut, fin = texte.find("{"), texte.rfind("}")
+    if debut < 0 or fin <= debut:
+        raise ErreurStructuration("Aucun objet JSON trouvé dans la réponse collée.")
+    try:
+        donnees = json.loads(texte[debut:fin + 1])
+    except json.JSONDecodeError as exc:
+        raise ErreurStructuration(f"JSON invalide : {exc.msg}, ligne {exc.lineno}.") from exc
+    return valider(donnees, SCHEMAS[type_demande])
+
+
+def valider(valeur, schema: dict, chemin: str = "réponse"):
+    """Vérifie les types et les champs obligatoires. Ignore les champs en trop."""
+    attendu = schema.get("type")
+    if attendu == "object":
+        if not isinstance(valeur, dict):
+            raise ErreurStructuration(f"{chemin} : objet attendu.")
+        sortie = {}
+        for cle, sous_schema in schema.get("properties", {}).items():
+            if cle in valeur:
+                sortie[cle] = valider(valeur[cle], sous_schema, f"{chemin}.{cle}")
+            elif cle in schema.get("required", []):
+                raise ErreurStructuration(f"Champ manquant : {chemin}.{cle}")
+        return sortie
+    if attendu == "array":
+        if not isinstance(valeur, list):
+            raise ErreurStructuration(f"{chemin} : liste attendue.")
+        return [valider(v, schema["items"], f"{chemin}[{i}]") for i, v in enumerate(valeur)]
+    if attendu == "string":
+        if valeur is None:
+            return ""
+        if isinstance(valeur, (int, float)) and not isinstance(valeur, bool):
+            valeur = str(valeur)
+        if not isinstance(valeur, str):
+            raise ErreurStructuration(f"{chemin} : texte attendu.")
+        if "enum" in schema and valeur not in schema["enum"]:
+            raise ErreurStructuration(f"{chemin} : valeur attendue parmi {', '.join(schema['enum'])}.")
+        return valeur
+    if attendu == "integer":
+        try:
+            return int(valeur)
+        except (TypeError, ValueError) as exc:
+            raise ErreurStructuration(f"{chemin} : nombre entier attendu.") from exc
+    if attendu == "boolean":
+        if not isinstance(valeur, bool):
+            raise ErreurStructuration(f"{chemin} : true ou false attendu.")
+        return valeur
+    return valeur
+
+
+# ---------- Test de connexion (page Réglages) ----------
+
+def tester_connexion() -> str:
+    mode = config.mode_claude()
+    if mode == "manuel":
+        return "Mode manuel : rien à tester. Tu colleras les demandes dans l'appli Claude."
+    if mode == "api":
+        import anthropic
+        if not config.cle_api_presente():
+            raise ErreurStructuration("Aucune clé API enregistrée.")
+        try:
+            anthropic.Anthropic(api_key=config.cle_api()).models.list(limit=1)
+        except anthropic.AuthenticationError as exc:
+            raise ErreurStructuration("Clé API refusée. Vérifie qu'elle est complète.") from exc
+        except anthropic.APIError as exc:
+            raise ErreurStructuration(f"Erreur de l'API Claude : {exc}") from exc
+        return "Clé API valide."
+    resultat = _appeler_abonnement(
+        "Réponds avec ok = true.", {"type": "object", "properties": {"ok": {"type": "boolean"}},
+                                    "required": ["ok"], "additionalProperties": False}, [])
+    if resultat.get("ok") is not True:
+        raise ErreurStructuration("Claude Code a répondu, mais pas comme prévu.")
+    return "Claude Code répond avec ton abonnement."

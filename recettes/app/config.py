@@ -1,4 +1,5 @@
 """Réglages de l'application, lus depuis les variables d'environnement ou le fichier reglages.txt."""
+import json
 import os
 from pathlib import Path
 
@@ -34,7 +35,6 @@ MODELE_WHISPER = os.environ.get("MODELE_WHISPER", "small")
 COOKIES = os.environ.get("COOKIES_FICHIER") or None
 
 MODELE_CLAUDE = os.environ.get("MODELE_CLAUDE", "claude-opus-5-5")
-# Modèle exact de ton airfryer, pour des réglages plus précis (ex. "Ninja Foodi Dual Zone AF400EU").
 # Nombre de personnes affiché par défaut sur chaque fiche.
 try:
     PORTIONS_DEFAUT = max(1, int(os.environ.get("PORTIONS_DEFAUT") or 4))
@@ -42,6 +42,7 @@ except ValueError:
     PORTIONS_DEFAUT = 4
 # Rédige automatiquement les versions Thermomix et airfryer après chaque import.
 ADAPTATION_AUTO = (os.environ.get("ADAPTATION_AUTO") or "oui").strip().lower() not in ("non", "0", "false")
+# Modèle exact de ton airfryer, pour des réglages plus précis (ex. "Ninja Foodi Dual Zone AF400EU").
 MODELE_AIRFRYER = os.environ.get("MODELE_AIRFRYER") or "modèle non précisé, réglages valables pour la gamme Ninja"
 
 
@@ -59,8 +60,33 @@ def _trouver_ffmpeg() -> str:
 FFMPEG = _trouver_ffmpeg()
 
 
+# ---------- Réglages modifiables depuis l'appli (page Réglages) ----------
+# Ils priment sur reglages.txt et sont gardés dans data/reglages.json.
+FICHIER_REGLAGES = DOSSIER_DONNEES / "reglages.json"
+MODES = ("api", "abonnement", "manuel")
+
+
+def lire_reglages() -> dict:
+    try:
+        return json.loads(FICHIER_REGLAGES.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def ecrire_reglages(valeurs: dict) -> None:
+    reglages = lire_reglages()
+    reglages.update(valeurs)
+    reglages = {k: v for k, v in reglages.items() if v not in (None, "")}
+    FICHIER_REGLAGES.parent.mkdir(parents=True, exist_ok=True)
+    FICHIER_REGLAGES.write_text(json.dumps(reglages, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def cle_api() -> str:
+    return (lire_reglages().get("cle_api") or os.environ.get("ANTHROPIC_API_KEY") or "").strip()
+
+
 def cle_api_presente() -> bool:
-    return bool(os.environ.get("ANTHROPIC_API_KEY"))
+    return bool(cle_api())
 
 
 def chemin_claude_code() -> str | None:
@@ -74,9 +100,10 @@ def chemin_claude_code() -> str | None:
 
 
 def mode_claude() -> str:
-    """"api" (clé payante) ou "abonnement" (Claude Code connecté à ton compte Claude)."""
-    choix = (os.environ.get("MODE_CLAUDE") or "").strip().lower()
-    if choix in ("api", "abonnement"):
+    """"api" (clé payante), "abonnement" (Claude Code connecté à ton compte Claude)
+    ou "manuel" (copier-coller avec l'appli Claude)."""
+    choix = (lire_reglages().get("mode") or os.environ.get("MODE_CLAUDE") or "").strip().lower()
+    if choix in MODES:
         return choix
     if cle_api_presente():
         return "api"
@@ -84,7 +111,9 @@ def mode_claude() -> str:
 
 
 def cle_claude_presente() -> bool:
-    """Vrai si Claude est utilisable, par la clé API ou par l'abonnement."""
+    """Vrai si Claude est utilisable automatiquement, par la clé API ou par l'abonnement."""
+    if mode_claude() == "manuel":
+        return False
     if mode_claude() == "abonnement":
         return chemin_claude_code() is not None
     return cle_api_presente()

@@ -16,13 +16,21 @@ STATIC = Path(__file__).parent / "static"
 
 app = FastAPI(title="Mes recettes")
 db.initialiser()
+
+
+def _etat_claude() -> str:
+    mode = config.mode_claude()
+    if mode == "manuel":
+        return "Claude : mode manuel (copier-coller avec l'appli Claude)"
+    if mode == "abonnement":
+        return ("Claude : abonnement via Claude Code" if config.cle_claude_presente() else
+                "Claude : Claude Code introuvable. Installe-le (voir le README).")
+    return ("Claude : clé API enregistrée (payante)" if config.cle_claude_presente() else
+            "Claude : aucune clé API. Ouvre la page Réglages de l'appli.")
+
+
 print("", flush=True)
-if config.mode_claude() == "abonnement":
-    print("Claude : abonnement via Claude Code" if config.cle_claude_presente() else
-          "Claude : Claude Code introuvable. Installe-le (voir le README).", flush=True)
-else:
-    print("Clé Claude : " + ("détectée (API payante)" if config.cle_claude_presente() else
-          "absente. Vérifie le fichier reglages.txt dans le dossier recettes."), flush=True)
+print(_etat_claude(), flush=True)
 
 
 class Import(BaseModel):
@@ -33,6 +41,17 @@ class Ingredient(BaseModel):
     quantite: str = ""
     unite: str = ""
     nom: str = ""
+
+
+class Reglages(BaseModel):
+    mode: str | None = None
+    cle_api: str | None = None
+    effacer_cle: bool = False
+
+
+class ReponseManuelle(BaseModel):
+    type: str
+    texte: str
 
 
 class Modification(BaseModel):
@@ -113,9 +132,13 @@ def traiter(recette_id: int, url: str) -> None:
             db.mettre_a_jour(recette_id, transcription=transcription, images=gardees, miniature=miniature)
 
         if not config.cle_claude_presente():
-            db.mettre_a_jour(recette_id, statut="brouillon", progression="",
-                             erreur="Pas de clé Claude : légende et transcription enregistrées. "
-                                    "Ajoute une clé puis clique sur Analyser.")
+            if config.mode_claude() == "manuel":
+                message = ("Vidéo importée. Clique sur « Analyser avec l'appli Claude » "
+                           "pour obtenir la fiche.")
+            else:
+                message = ("Claude n'est pas connecté : légende et transcription enregistrées. "
+                           "Connecte Claude dans Réglages puis clique sur Analyser.")
+            db.mettre_a_jour(recette_id, statut="brouillon", progression="", erreur=message)
             return
         analyser(recette_id)
     except Exception as exc:
@@ -147,8 +170,48 @@ def analyser(recette_id: int) -> None:
 
 @app.get("/api/etat")
 def etat():
-    return {"cle_claude": config.cle_claude_presente(), "modele_whisper": config.MODELE_WHISPER,
-            "portions_defaut": config.PORTIONS_DEFAUT}
+    return {"cle_claude": config.cle_claude_presente(), "mode": config.mode_claude(),
+            "modele_whisper": config.MODELE_WHISPER, "portions_defaut": config.PORTIONS_DEFAUT}
+
+
+def _masquer(cle: str) -> str:
+    return f"{cle[:10]}…{cle[-4:]}" if len(cle) > 16 else ("enregistrée" if cle else "")
+
+
+@app.get("/api/reglages")
+def lire_reglages():
+    return {
+        "mode": config.mode_claude(),
+        "cle_api": _masquer(config.cle_api()),
+        "claude_code": config.chemin_claude_code() or "",
+        "etat": _etat_claude(),
+    }
+
+
+@app.put("/api/reglages")
+def modifier_reglages(donnees: Reglages):
+    valeurs = {}
+    if donnees.mode is not None:
+        if donnees.mode not in config.MODES:
+            raise HTTPException(400, "Mode inconnu.")
+        valeurs["mode"] = donnees.mode
+    if donnees.cle_api:
+        cle = donnees.cle_api.strip()
+        if not cle.startswith("sk-ant-"):
+            raise HTTPException(400, "Une clé API Claude commence par sk-ant-.")
+        valeurs["cle_api"] = cle
+    if donnees.effacer_cle:
+        valeurs["cle_api"] = None
+    config.ecrire_reglages(valeurs)
+    return lire_reglages()
+
+
+@app.post("/api/reglages/tester")
+def tester_reglages():
+    try:
+        return {"ok": True, "message": structuration.tester_connexion()}
+    except structuration.ErreurStructuration as exc:
+        return {"ok": False, "message": str(exc)}
 
 
 @app.post("/api/importer")
@@ -206,7 +269,7 @@ def relancer_analyse(recette_id: int, taches: BackgroundTasks):
     if not db.lire(recette_id):
         raise HTTPException(404, "Recette introuvable.")
     if not config.cle_claude_presente():
-        raise HTTPException(400, "Ajoute ta clé dans reglages.txt puis relance l'appli.")
+        raise HTTPException(400, "Claude n'est pas connecté. Ouvre la page Réglages.")
     db.mettre_a_jour(recette_id, statut="en_cours", progression="En attente", erreur="")
     taches.add_task(analyser, recette_id)
     return {"ok": True}
@@ -219,12 +282,47 @@ def adapter_appareils(recette_id: int):
     if not recette:
         raise HTTPException(404, "Recette introuvable.")
     if not config.cle_claude_presente():
-        raise HTTPException(400, "Ajoute ta clé dans reglages.txt puis relance l'appli.")
+        raise HTTPException(400, "Claude n'est pas connecté. Ouvre la page Réglages.")
     try:
         adaptations = structuration.adapter(recette)
     except structuration.ErreurStructuration as exc:
         raise HTTPException(502, str(exc)) from exc
     db.mettre_a_jour(recette_id, adaptations=adaptations)
+    return db.lire(recette_id)
+
+
+@app.get("/api/recettes/{recette_id}/demande")
+def demande_manuelle(recette_id: int, type: str = "fiche"):
+    """Texte à coller dans l'appli Claude (mode manuel)."""
+    recette = db.lire(recette_id)
+    if not recette:
+        raise HTTPException(404, "Recette introuvable.")
+    if type not in structuration.SCHEMAS:
+        raise HTTPException(400, "Type de demande inconnu.")
+    try:
+        texte = structuration.demande_manuelle(type, recette)
+    except structuration.ErreurStructuration as exc:
+        raise HTTPException(400, str(exc)) from exc
+    images = [f"/images/{c}" for c in recette["images"]] if type == "fiche" else []
+    return {"texte": texte, "images": images}
+
+
+@app.post("/api/recettes/{recette_id}/reponse")
+def reponse_manuelle(recette_id: int, donnees: ReponseManuelle):
+    """Enregistre la réponse JSON collée depuis l'appli Claude."""
+    recette = db.lire(recette_id)
+    if not recette:
+        raise HTTPException(404, "Recette introuvable.")
+    if donnees.type not in structuration.SCHEMAS:
+        raise HTTPException(400, "Type de réponse inconnu.")
+    try:
+        resultat = structuration.lire_reponse_manuelle(donnees.type, donnees.texte)
+    except structuration.ErreurStructuration as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if donnees.type == "fiche":
+        _appliquer_fiche(recette_id, resultat, recette["titre"] or "")
+    else:
+        db.mettre_a_jour(recette_id, adaptations=resultat)
     return db.lire(recette_id)
 
 
