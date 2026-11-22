@@ -4,3 +4,4 @@ __pycache__/
 recettes/data/
 recettes/.env
 recettes/reglages.txt
+recettes/installation.log

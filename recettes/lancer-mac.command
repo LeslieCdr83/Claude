@@ -3,7 +3,7 @@
 cd "$(dirname "$0")"
 
 PYTHON=""
-for candidat in python3.13 python3.12 python3.11 python3.10 python3; do
+for candidat in python3.12 python3.13 python3.11 python3.10 python3; do
   if command -v "$candidat" >/dev/null 2>&1 && "$candidat" -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then
     PYTHON="$candidat"; break
   fi
