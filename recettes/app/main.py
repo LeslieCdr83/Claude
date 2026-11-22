@@ -153,17 +153,15 @@ def analyser(recette_id: int, mode: str | None = None) -> None:
     try:
         db.mettre_a_jour(recette_id, statut="en_cours", progression="Rédaction de la fiche par Claude", erreur="")
         images = [config.DOSSIER_IMAGES / chemin for chemin in recette["images"]]
+        if config.ADAPTATION_AUTO:
+            db.mettre_a_jour(recette_id, progression="Rédaction de la fiche et des versions TM7 et Ninja")
+        # Un seul appel : la fiche et, si ADAPTATION_AUTO, les versions Thermomix et airfryer.
         fiche = structuration.structurer(recette["titre"] or "", recette["legende"], recette["transcription"],
-                                         images, mode)
+                                         images, mode, avec_adaptations=config.ADAPTATION_AUTO)
+        adaptations = fiche.pop("adaptations", None)
         _appliquer_fiche(recette_id, fiche, recette["titre"] or "")
-        recette = db.lire(recette_id)
-        if config.ADAPTATION_AUTO and recette["statut"] == "pret":
-            db.mettre_a_jour(recette_id, statut="en_cours", progression="Adaptation Thermomix et airfryer")
-            try:
-                db.mettre_a_jour(recette_id, adaptations=structuration.adapter(recette, mode))
-            except Exception:
-                traceback.print_exc()  # la fiche reste utilisable, l'encart propose de réessayer
-            db.mettre_a_jour(recette_id, statut="pret", progression="")
+        if adaptations and fiche.get("est_une_recette", True):
+            db.mettre_a_jour(recette_id, adaptations=adaptations)
     except Exception as exc:
         traceback.print_exc()
         db.mettre_a_jour(recette_id, statut="brouillon", progression="", erreur=str(exc)[:500])
@@ -321,7 +319,10 @@ def reponse_manuelle(recette_id: int, donnees: ReponseManuelle):
     except structuration.ErreurStructuration as exc:
         raise HTTPException(400, str(exc)) from exc
     if type_reponse == "fiche":
+        adaptations = resultat.pop("adaptations", None)
         _appliquer_fiche(recette_id, resultat, recette["titre"] or "")
+        if adaptations:
+            db.mettre_a_jour(recette_id, adaptations=adaptations)
     else:
         db.mettre_a_jour(recette_id, adaptations=resultat)
     return db.lire(recette_id)

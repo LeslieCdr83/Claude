@@ -81,8 +81,19 @@ def texte_fiche(titre: str, legende: str, transcription: str) -> str:
             f"<transcription>\n{transcription or '(aucune voix détectée)'}\n</transcription>")
 
 
-def structurer(titre: str, legende: str, transcription: str, images: list[Path], mode: str | None = None) -> dict:
-    """Appelle Claude et renvoie un dictionnaire conforme à SCHEMA_RECETTE."""
+def texte_complet(titre: str, legende: str, transcription: str) -> str:
+    """Fiche et versions TM7 / Ninja dans la même demande : un seul appel à Claude."""
+    return (texte_fiche(titre, legende, transcription)
+            + "\n\nEnsuite, à partir de la fiche que tu viens de rédiger, remplis \"adaptations\".\n"
+            + consignes_adaptation())
+
+
+def structurer(titre: str, legende: str, transcription: str, images: list[Path], mode: str | None = None,
+               avec_adaptations: bool = False) -> dict:
+    """Appelle Claude et renvoie la fiche. Avec avec_adaptations, la fiche contient aussi
+    "adaptations" (versions Thermomix et airfryer), obtenues dans le même appel."""
+    if avec_adaptations:
+        return _appeler_claude(texte_complet(titre, legende, transcription), SCHEMA_COMPLET, images[:10], mode)
     return _appeler_claude(texte_fiche(titre, legende, transcription), SCHEMA_RECETTE, images[:10], mode)
 
 
@@ -273,6 +284,11 @@ def adapter(recette: dict, mode: str | None = None) -> dict:
     return _appeler_claude(texte_adaptation(recette), SCHEMA_ADAPTATIONS, mode=mode)
 
 
+def consignes_adaptation() -> str:
+    return (CONSIGNES_ADAPTATION.replace("{modele}", config.MODELE_AIRFRYER)
+            .replace("{personnes}", str(config.PORTIONS_DEFAUT)))
+
+
 def texte_adaptation(recette: dict) -> str:
     ingredients = "\n".join(
         "- " + " ".join(x for x in (i.get("quantite", ""), i.get("unite", ""), i.get("nom", "")) if x)
@@ -282,8 +298,7 @@ def texte_adaptation(recette: dict) -> str:
     if not ingredients and not etapes:
         raise ErreurStructuration("La recette n'a ni ingrédients ni étapes à adapter.")
     texte = (
-        CONSIGNES_ADAPTATION.replace("{modele}", config.MODELE_AIRFRYER)
-        .replace("{personnes}", str(config.PORTIONS_DEFAUT))
+        consignes_adaptation()
         + f"\n\n<recette>\nTitre : {recette.get('titre') or ''}\nPortions : {recette.get('portions') or ''}\n"
         + f"Ingrédients :\n{ingredients}\n\nÉtapes :\n{etapes}\n\nNotes : {recette.get('notes') or ''}\n</recette>"
     )
@@ -292,19 +307,28 @@ def texte_adaptation(recette: dict) -> str:
 
 # ---------- Mode manuel : copier-coller avec l'appli Claude ----------
 
-SCHEMAS = {"fiche": SCHEMA_RECETTE, "adaptation": SCHEMA_ADAPTATIONS}
+SCHEMA_COMPLET = {
+    **SCHEMA_RECETTE,
+    "properties": {**SCHEMA_RECETTE["properties"], "adaptations": SCHEMA_ADAPTATIONS},
+    "required": [*SCHEMA_RECETTE["required"], "adaptations"],
+}
+# Un JSON collé peut contenir ou non les adaptations.
+SCHEMAS = {"fiche": {**SCHEMA_COMPLET, "required": SCHEMA_RECETTE["required"]}, "adaptation": SCHEMA_ADAPTATIONS}
 
 
 def demande_manuelle(type_demande: str, recette: dict) -> str:
     """Texte à coller dans l'appli Claude. La réponse attendue est un JSON conforme au schéma."""
     if type_demande == "fiche":
-        texte = texte_fiche(recette.get("titre") or "", recette.get("legende") or "",
-                            recette.get("transcription") or "")
+        construire = texte_complet if config.ADAPTATION_AUTO else texte_fiche
+        texte = construire(recette.get("titre") or "", recette.get("legende") or "",
+                           recette.get("transcription") or "")
         texte += ("\n\nSi des captures d'écran de la vidéo sont jointes, lis le texte qu'elles affichent "
                   "(quantités, ingrédients).")
+        schema = SCHEMA_COMPLET if config.ADAPTATION_AUTO else SCHEMA_RECETTE
     else:
         texte = texte_adaptation(recette)
-    schema = json.dumps(SCHEMAS[type_demande], ensure_ascii=False)
+        schema = SCHEMA_ADAPTATIONS
+    schema = json.dumps(schema, ensure_ascii=False)
     return (texte + "\n\nRéponds uniquement avec un objet JSON valide qui respecte ce schéma JSON, "
             f"sans texte avant ni après :\n{schema}")
 
@@ -335,8 +359,11 @@ def lire_reponse_manuelle(type_demande: str, texte: str, defauts: dict | None = 
     donnees = extraire_json(texte)
     if type_demande == "auto":
         type_demande = detecter_type(donnees)
-    defauts = (defauts or {}).get(type_demande) or {}
-    return type_demande, valider({**defauts, **donnees}, SCHEMAS[type_demande])
+    tous = defauts or {}
+    if type_demande == "fiche" and isinstance(donnees.get("adaptations"), dict):
+        # Adaptations partielles (par exemple seulement le Ninja) : le reste est gardé.
+        donnees["adaptations"] = {**(tous.get("adaptation") or {}), **donnees["adaptations"]}
+    return type_demande, valider({**(tous.get(type_demande) or {}), **donnees}, SCHEMAS[type_demande])
 
 
 def valider(valeur, schema: dict, chemin: str = "réponse"):

@@ -66,7 +66,7 @@ curl -fsSL https://claude.ai/install.sh | bash
 2. Ferme le terminal, ouvre-en un nouveau et tape `claude`. Choisis la connexion avec ton compte Claude et valide dans le navigateur. Tape ensuite `/exit`.
 3. Relance l'appli. Le bouton « Claude Code » devient actif. Réglages propose « Tester Claude Code ».
 
-Une analyse prend 20 à 40 secondes, l'adaptation TM7 et Ninja autant.
+Une analyse complète (fiche, TM7 et Ninja) prend 30 à 60 secondes.
 
 ### Avec une clé API (payante)
 
@@ -86,7 +86,7 @@ Quand la vidéo ne donne pas une quantité, Claude l'estime à partir d'une part
 
 Chaque fiche affiche les quantités pour 4 personnes. Les boutons + et − changent le nombre, et la recette d'origine reste indiquée. Pour un autre nombre par défaut, ajoute `PORTIONS_DEFAUT=2` dans `reglages.txt`.
 
-Après chaque import, Claude rédige aussi une version Thermomix TM7 et une version airfryer Ninja pour 4 personnes, avec les réglages de chaque étape. L'encart indique si la recette se fait entièrement, en partie ou pas du tout avec l'appareil. Pour des réglages plus précis, indique le modèle de ton airfryer : `MODELE_AIRFRYER=Ninja Foodi Dual Zone AF400EU`. Pour ne générer ces versions qu'à la demande, mets `ADAPTATION_AUTO=non`.
+Après chaque import, Claude rédige aussi, dans la même demande que la fiche, une version Thermomix TM7 et une version airfryer Ninja pour 4 personnes, avec les réglages de chaque étape. L'encart indique si la recette se fait entièrement, en partie ou pas du tout avec l'appareil. Pour des réglages plus précis, indique le modèle de ton airfryer : `MODELE_AIRFRYER=Ninja Foodi Dual Zone AF400EU`. Pour ne générer ces versions qu'à la demande, mets `ADAPTATION_AUTO=non`.
 
 ## Menus de la semaine
 

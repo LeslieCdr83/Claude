@@ -75,13 +75,15 @@ def test_import_avec_cle_remplit_la_fiche(monkeypatch):
     preparer_faux(monkeypatch)
     monkeypatch.setattr(main.config, "disponible", lambda mode: mode in ("api", "abonnement"))
     modes = []
-    monkeypatch.setattr(main.structuration, "structurer", lambda *a: modes.append(a[-1]) or FICHE)
-    monkeypatch.setattr(main.structuration, "adapter", lambda r, mode: modes.append(mode) or ADAPTATIONS)
+    def faux_structurer(*a, avec_adaptations=False):
+        modes.append((a[4], avec_adaptations))
+        return {**FICHE, "adaptations": ADAPTATIONS}
+    monkeypatch.setattr(main.structuration, "structurer", faux_structurer)
     rep = client.post("/api/importer", json={"url": "https://www.tiktok.com/@chef/video/2", "mode": "abonnement"})
     recette = client.get(f"/api/recettes/{rep.json()['id']}").json()
     assert recette["statut"] == "pret"
     assert recette["adaptations"]["thermomix"]["faisable"] == "oui"
-    assert modes == ["abonnement", "abonnement"]
+    assert modes == [("abonnement", True)]  # un seul appel pour la fiche et les appareils
     assert recette["titre"] == "Pâtes au citron"
     assert recette["tags"] == ["rapide", "végétarien"]
     assert len(recette["ingredients"]) == 2
@@ -218,4 +220,19 @@ def test_coller_json_partiel_et_detection_du_type():
     seul_ninja = json.dumps({"airfryer": {**APPAREIL, "resume": "Air Fry 180 °C"}})
     maj = client.post(f"/api/recettes/{r['id']}/reponse", json={"type": "auto", "texte": seul_ninja}).json()
     assert maj["adaptations"]["airfryer"]["resume"] == "Air Fry 180 °C"
+    assert maj["adaptations"]["thermomix"]["faisable"] == "oui"
+
+
+def test_demande_et_reponse_combinees():
+    r = client.post("/api/recettes", json={"titre": "Brouillon 2"}).json()
+    main.db.mettre_a_jour(r["id"], legende="riz cantonais", statut="brouillon")
+    demande = client.get(f"/api/recettes/{r['id']}/demande", params={"type": "fiche"}).json()["texte"]
+    assert '"adaptations"' in demande and "TM7" in demande and "200 g" not in demande.split("<legende>")[0][:0]
+    colle = json.dumps({**FICHE, "adaptations": ADAPTATIONS})
+    maj = client.post(f"/api/recettes/{r['id']}/reponse", json={"type": "auto", "texte": colle}).json()
+    assert maj["titre"] == "Pâtes au citron" and maj["adaptations"]["thermomix"]["faisable"] == "oui"
+    # Adaptation partielle dans une fiche : le Thermomix déjà enregistré est gardé.
+    partiel = json.dumps({"adaptations": {"airfryer": {**APPAREIL, "resume": "Air Fry 200 °C"}}})
+    maj = client.post(f"/api/recettes/{r['id']}/reponse", json={"type": "auto", "texte": partiel}).json()
+    assert maj["adaptations"]["airfryer"]["resume"] == "Air Fry 200 °C"
     assert maj["adaptations"]["thermomix"]["faisable"] == "oui"
