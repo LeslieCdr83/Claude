@@ -5,3 +5,4 @@ faster-whisper>=1.1
 anthropic>=2.12
 python-multipart>=0.0.9
 imageio-ffmpeg>=0.5
+pywebpush>=2.0

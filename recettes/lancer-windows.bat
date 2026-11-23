@@ -48,6 +48,8 @@ if not exist .venv\installation-ok (
   if errorlevel 1 goto echec
   echo ok > .venv\installation-ok
 )
+rem Installe les outils ajoutes par une mise a jour (quelques secondes si rien ne manque).
+.venv\Scripts\python.exe -m pip install -q --disable-pip-version-check -r requirements.txt >> installation.log 2>&1
 
 echo.
 echo Mes recettes tourne sur http://localhost:8000

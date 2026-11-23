@@ -105,6 +105,14 @@ Un plat choisi à la main est verrouillé 🔒 : un nouveau tirage le garde. Sur
 
 Le tirage se fait dans l'appli, sans Claude : il est gratuit et immédiat.
 
+### Notification quand un plat est ajouté au menu
+
+Dans Réglages, section Notifications, touche « Activer sur cet appareil » puis autorise les notifications. Quand un plat entre dans le menu depuis un autre appareil, celui-ci reçoit une notification. Toucher la notification ouvre le menu. Un plat ajouté depuis l'appareil lui-même ne le notifie pas, et un plat déplacé d'un jour à l'autre non plus.
+
+- Sur iPhone (iOS 16.4 ou plus récent), il faut l'appli installée sur l'écran d'accueil et ouverte avec ton adresse Tailscale en https.
+- Le PC doit être allumé, avec l'appli lancée : c'est lui qui envoie les notifications.
+- « Envoyer un essai » vérifie que tout marche.
+
 ## Mettre à jour une recette avec un JSON Claude
 
 Sur une fiche, le bouton « Coller un JSON Claude » accepte une fiche complète ou une version TM7 et Ninja. L'appli reconnaît le type. Les champs absents gardent leur valeur : tu peux coller seulement les ingrédients ou seulement les étapes. La page « + » (nouvelle recette) permet aussi de créer une recette à partir d'un JSON.

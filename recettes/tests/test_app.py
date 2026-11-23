@@ -262,3 +262,31 @@ def test_champ_achat_garde_et_facultatif():
     ancien = json.dumps({"ingredients": [{"quantite": "1", "unite": "", "nom": "citron", "estimee": False}]})
     maj = client.post(f"/api/recettes/{r['id']}/reponse", json={"type": "auto", "texte": ancien}).json()
     assert maj["ingredients"][0]["achat"] == ""
+
+
+def test_notification_nouveau_plat_au_menu(monkeypatch):
+    envois = []
+    monkeypatch.setattr(main.notifications, "envoyer", lambda titre, texte, lien="/#/menus", sauf=None: envois.append((titre, texte, sauf)))
+    a = client.post("/api/recettes", json={"titre": "Ratatouille"}).json()["id"]
+    b = client.post("/api/recettes", json={"titre": "Lasagnes"}).json()["id"]
+    client.put("/api/partage/menu-semaine", json=[None] * 7)
+    client.put("/api/partage/menu-semaine", json=[a, None, None, None, None, None, None], headers={"X-Appareil": "pc"})
+    assert envois == [("Nouveau plat au menu", "Lundi : Ratatouille", "pc")]
+    client.put("/api/partage/menu-semaine", json=[None, a, None, None, None, None, b], headers={"X-Appareil": "tel"})
+    assert envois[-1] == ("Nouveau plat au menu", "Dimanche : Lasagnes", "tel")  # Ratatouille déplacée : pas annoncée
+    client.put("/api/partage/menu-semaine", json=[None] * 7)
+    client.put("/api/partage/menu-semaine", json=[a, b, None, None, None, None, None])
+    assert envois[-1][0] == "2 plats ajoutés au menu"
+    nb = len(envois)
+    client.put("/api/partage/courses", json=[{"id": a, "facteur": 1}])
+    assert len(envois) == nb  # la liste de courses ne notifie pas
+
+
+def test_abonnement_notifications():
+    cle = client.get("/api/notifications", params={"appareil": "x"}).json()
+    assert len(cle["cle"]) > 80 and cle["abonne"] is False
+    assert client.post("/api/notifications", json={"appareil": "x", "abonnement": {"endpoint": "http://pas-https"}}).status_code == 400
+    ok = client.post("/api/notifications", json={"appareil": "x", "abonnement": {"endpoint": "https://web.push.apple.com/abc", "keys": {}}})
+    assert ok.status_code == 200 and client.get("/api/notifications", params={"appareil": "x"}).json()["abonne"] is True
+    client.delete("/api/notifications", params={"appareil": "x"})
+    assert client.get("/api/notifications", params={"appareil": "x"}).json()["abonne"] is False

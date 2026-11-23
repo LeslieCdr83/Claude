@@ -7,12 +7,12 @@ import tempfile
 import traceback
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Body, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Body, FastAPI, Header, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import config, db, extraction, structuration
+from . import config, db, extraction, notifications, structuration
 
 STATIC = Path(__file__).parent / "static"
 
@@ -398,16 +398,74 @@ def lire_partage():
     return _lire_partage()
 
 
+JOURS = ("Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche")
+
+
 @app.put("/api/partage/{cle}")
-def ecrire_partage(cle: str, valeur: list = Body(...)):
+def ecrire_partage(cle: str, valeur: list = Body(...), x_appareil: str | None = Header(None)):
     if cle not in CLES_PARTAGEES:
         raise HTTPException(404, "Donnée inconnue.")
     if len(json.dumps(valeur)) > 200_000:
         raise HTTPException(413, "Donnée trop grande.")
     with _verrou_partage:
         donnees = _lire_partage()
+        ancien = donnees.get(cle) or []
         donnees[cle] = valeur
         FICHIER_PARTAGE.write_text(json.dumps(donnees, ensure_ascii=False), encoding="utf-8")
+    if cle == "menu-semaine":
+        _annoncer_nouveaux_plats(ancien, valeur, x_appareil)
+    return {"ok": True}
+
+
+def _annoncer_nouveaux_plats(ancien: list, nouveau: list, appareil: str | None) -> None:
+    """Notifie les autres appareils des plats qui viennent d'entrer dans le menu."""
+    ajouts = []
+    for jour, recette_id in enumerate(nouveau[:7]):
+        if isinstance(recette_id, int) and recette_id not in ancien:
+            recette = db.lire(recette_id)
+            if recette:
+                ajouts.append(f"{JOURS[jour]} : {recette['titre']}")
+    if not ajouts:
+        return
+    titre = "Nouveau plat au menu" if len(ajouts) == 1 else f"{len(ajouts)} plats ajoutés au menu"
+    notifications.envoyer(titre, "\n".join(ajouts), sauf=appareil)
+
+
+class Abonnement(BaseModel):
+    appareil: str
+    abonnement: dict
+
+
+@app.get("/api/notifications")
+def etat_notifications(appareil: str = ""):
+    try:
+        cle = notifications.cle_publique()
+    except ImportError as exc:
+        raise HTTPException(503, "Outil de notifications manquant : lance mettre-a-jour.bat, puis relance l'appli.") from exc
+    return {"cle": cle, "abonne": bool(appareil) and notifications.est_abonne(appareil)}
+
+
+@app.post("/api/notifications")
+def activer_notifications(donnees: Abonnement):
+    if not donnees.abonnement.get("endpoint", "").startswith("https://"):
+        raise HTTPException(400, "Abonnement invalide.")
+    notifications.abonner(donnees.appareil, donnees.abonnement)
+    return {"ok": True}
+
+
+@app.delete("/api/notifications")
+def desactiver_notifications(appareil: str):
+    notifications.desabonner(appareil)
+    return {"ok": True}
+
+
+@app.post("/api/notifications/test")
+def tester_notifications(appareil: str):
+    if not notifications.est_abonne(appareil):
+        raise HTTPException(400, "Les notifications ne sont pas activées sur cet appareil.")
+    abonnement = {appareil: notifications._lire()[appareil]}
+    notifications.threading.Thread(target=notifications._envoyer, daemon=True,
+                                   args=(abonnement, "Mes recettes", "Les notifications fonctionnent.", "/#/menus")).start()
     return {"ok": True}
 
 

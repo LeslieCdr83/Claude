@@ -8,9 +8,18 @@ let minuterie = null;
 // ---------- Outils ----------
 const echap = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+// Identifiant de cet appareil : un plat ajouté depuis ce téléphone ne le notifie pas lui-même.
+const APPAREIL = (() => {
+  try {
+    let id = localStorage.getItem("appareil");
+    if (!id) { id = Math.random().toString(36).slice(2) + Date.now().toString(36); localStorage.setItem("appareil", id); }
+    return id;
+  } catch (_) { return "inconnu"; }
+})();
+
 async function api(chemin, options = {}) {
   const rep = await fetch(chemin, {
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Appareil": APPAREIL },
     ...options,
     body: options.body ? JSON.stringify(options.body) : undefined,
   });
@@ -556,6 +565,66 @@ function ouvrirCollage(r) {
   });
 }
 
+// ---------- Notifications (Web Push) ----------
+const versOctets = (b64) => {
+  const brut = atob((b64 + "=".repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from(brut, (c) => c.charCodeAt(0));
+};
+
+async function dessinerNotifications() {
+  const zone = document.getElementById("zone-notifications");
+  if (!zone) return;
+  const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+  const installee = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+  if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) {
+    zone.innerHTML = ios && !installee
+      ? `<p class="aide">Sur iPhone, les notifications marchent seulement dans l'appli installée : dans Safari, bouton Partager puis « Sur l'écran d'accueil », puis ouvre l'appli depuis son icône et reviens ici.</p>`
+      : `<p class="aide">Ce navigateur ne gère pas les notifications.</p>`;
+    return;
+  }
+  if (!window.isSecureContext) {
+    zone.innerHTML = `<p class="aide">Les notifications demandent une adresse en https. Ouvre l'appli avec ton adresse Tailscale.</p>`;
+    return;
+  }
+  let infos;
+  try { infos = await api(`/api/notifications?appareil=${APPAREIL}`); }
+  catch (err) { zone.innerHTML = `<p class="aide">${echap(err.message)}</p>`; return; }
+  const refusees = Notification.permission === "denied";
+  zone.innerHTML = infos.abonne && !refusees ? `
+      <p>✓ Activées sur cet appareil.</p>
+      <div class="actions"><button id="n-test">Envoyer un essai</button><button id="n-off" class="danger">Désactiver</button></div>`
+    : refusees ? `<p class="aide">Les notifications sont bloquées pour cette appli. Autorise-les dans les réglages de l'appareil (sur iPhone : Réglages, Notifications, Mes recettes), puis reviens ici.</p>`
+    : `<div class="actions"><button class="principal" id="n-on">Activer sur cet appareil</button></div>`;
+
+  const on = document.getElementById("n-on");
+  if (on) on.onclick = async () => {
+    try {
+      if ((await Notification.requestPermission()) !== "granted") { dessinerNotifications(); return; }
+      const enregistrement = await navigator.serviceWorker.ready;
+      const abonnement = await enregistrement.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: versOctets(infos.cle) });
+      await api("/api/notifications", { method: "POST", body: { appareil: APPAREIL, abonnement: abonnement.toJSON() } });
+      toast("Notifications activées.");
+    } catch (err) { toast("Activation impossible : " + err.message); }
+    dessinerNotifications();
+  };
+  const off = document.getElementById("n-off");
+  if (off) off.onclick = async () => {
+    try {
+      const enregistrement = await navigator.serviceWorker.ready;
+      const abonnement = await enregistrement.pushManager.getSubscription();
+      if (abonnement) await abonnement.unsubscribe();
+    } catch (_) {}
+    await api(`/api/notifications?appareil=${APPAREIL}`, { method: "DELETE" }).catch(() => {});
+    toast("Notifications désactivées.");
+    dessinerNotifications();
+  };
+  const essai = document.getElementById("n-test");
+  if (essai) essai.onclick = async () => {
+    try { await api(`/api/notifications/test?appareil=${APPAREIL}`, { method: "POST" }); toast("Essai envoyé. Il arrive en quelques secondes."); }
+    catch (err) { toast(err.message); }
+  };
+}
+
 // ---------- Réglages ----------
 async function vueReglages() {
   const r = await api("/api/reglages");
@@ -579,6 +648,11 @@ async function vueReglages() {
       <p>${r.claude_code ? "✓ Claude Code est installé sur cet ordinateur." : "✗ Claude Code est introuvable. Installe-le (voir le README), puis relance l'appli."}</p>
       <div class="actions"><button type="button" data-tester="abonnement" ${r.claude_code ? "" : "disabled"}>Tester Claude Code</button></div>
       <p class="aide" id="test-abonnement"></p>
+    </section>
+    <section class="bloc" id="bloc-notifications">
+      <h2>Notifications</h2>
+      <p class="aide">Reçois une notification sur cet appareil quand un plat est ajouté au menu de la semaine depuis un autre appareil.</p>
+      <div id="zone-notifications"><span class="chargement"></span></div>
     </section>
     <form class="bloc formulaire" id="form-drive">
       <h2>Leclerc Drive</h2>
@@ -611,6 +685,7 @@ async function vueReglages() {
     if (!confirm("Effacer la clé API enregistrée ?")) return;
     try { await enregistrer({ effacer_cle: true }); toast("Clé effacée."); vueReglages(); } catch (err) { toast(err.message); }
   };
+  dessinerNotifications();
   document.getElementById("form-drive").addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
