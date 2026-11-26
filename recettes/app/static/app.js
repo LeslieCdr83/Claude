@@ -17,12 +17,69 @@ const APPAREIL = (() => {
   } catch (_) { return "inconnu"; }
 })();
 
+// ---------- Hors ligne ----------
+// Quand le PC ne répond pas, le service worker (sw.js) renvoie la copie gardée sur l'appareil
+// et ajoute l'en-tête X-Hors-Ligne. Les changements de la liste de courses et du menu
+// attendent dans une file, envoyée dès que le PC répond de nouveau.
+let horsLigne = false;
+function signalerHorsLigne(etatHorsLigne) {
+  const bandeau = document.getElementById("hors-ligne");
+  if (bandeau) {
+    bandeau.hidden = !etatHorsLigne;
+    const attente = Object.keys(lireLocal("file-attente", {})).length;
+    bandeau.textContent = "Hors ligne : tu vois les recettes et le menu gardés sur cet appareil."
+      + (attente ? " Tes changements de liste et de menu seront envoyés au retour de la connexion." : "");
+  }
+  horsLigne = etatHorsLigne;
+  if (!etatHorsLigne) viderFileAttente(); // ne fait rien si la file est vide
+}
+function mettreEnAttente(cle, valeur) {
+  const file = lireLocal("file-attente", {});
+  file[cle] = valeur; // seule la dernière version compte
+  try { localStorage.setItem("file-attente", JSON.stringify(file)); } catch (_) {}
+  signalerHorsLigne(true);
+}
+let envoiEnCours = false;
+async function viderFileAttente() {
+  const file = lireLocal("file-attente", {});
+  if (envoiEnCours || !Object.keys(file).length) return;
+  envoiEnCours = true;
+  try {
+    for (const [cle, valeur] of Object.entries(file)) {
+      await api(`/api/partage/${cle}`, { method: "PUT", body: valeur });
+      const reste = lireLocal("file-attente", {});
+      if (JSON.stringify(reste[cle]) === JSON.stringify(valeur)) delete reste[cle];
+      try { localStorage.setItem("file-attente", JSON.stringify(reste)); } catch (_) {}
+    }
+    toast("Connexion revenue : tes changements hors ligne sont enregistrés.");
+  } catch (_) {
+    // Toujours injoignable : on réessaiera.
+  } finally {
+    envoiEnCours = false;
+  }
+}
+
 async function api(chemin, options = {}) {
-  const rep = await fetch(chemin, {
-    headers: { "Content-Type": "application/json", "X-Appareil": APPAREIL },
-    ...options,
-    body: options.body ? JSON.stringify(options.body) : undefined,
-  });
+  const methode = (options.method || "GET").toUpperCase();
+  let rep;
+  try {
+    rep = await fetch(chemin, {
+      headers: { "Content-Type": "application/json", "X-Appareil": APPAREIL },
+      ...options,
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+  } catch (_) {
+    // Réseau coupé ou PC éteint, et aucune copie sur l'appareil.
+    if (methode === "PUT" && chemin.startsWith("/api/partage/")) {
+      mettreEnAttente(chemin.split("/").pop(), options.body);
+      return { ok: true, enAttente: true };
+    }
+    signalerHorsLigne(true);
+    throw new Error(methode === "GET"
+      ? "Hors ligne : cette page n'est pas encore gardée sur cet appareil."
+      : "Hors ligne : cette action demande que l'ordinateur soit allumé, avec l'appli lancée.");
+  }
+  if (methode === "GET") signalerHorsLigne(rep.headers.get("X-Hors-Ligne") === "1");
   if (!rep.ok) {
     let msg = `Erreur ${rep.status}`;
     try { msg = (await rep.json()).detail || msg; } catch (_) {}
@@ -48,13 +105,16 @@ const lireStock = (cle, defaut) => (PARTAGES.has(cle) ? partage[cle] ?? defaut :
 function ecrireStock(cle, val) {
   if (PARTAGES.has(cle)) {
     partage[cle] = val;
-    api(`/api/partage/${cle}`, { method: "PUT", body: val }).catch(() => toast("Enregistrement impossible : l'ordinateur est-il allumé ?"));
+    // En cas d'échec, api() met le changement en file d'attente.
+    api(`/api/partage/${cle}`, { method: "PUT", body: val }).catch(() => mettreEnAttente(cle, val));
     return;
   }
   try { localStorage.setItem(cle, JSON.stringify(val)); } catch (_) {}
 }
 async function chargerPartage() {
-  try { partage = await api("/api/partage"); } catch (_) { return; }
+  try { partage = await api("/api/partage"); } catch (_) { partage = { ...partage }; }
+  // Les changements faits hors ligne passent devant la copie.
+  Object.assign(partage, lireLocal("file-attente", {}));
   // Première fois : envoie au serveur ce que ce navigateur avait gardé pour lui seul.
   for (const cle of PARTAGES) {
     const ancien = lireLocal(cle, null);
@@ -1162,6 +1222,7 @@ async function demarrer() {
   try { etat = await api("/api/etat"); } catch (_) {}
   majCompteur();
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+  window.addEventListener("online", () => routeur());
 
   // Partage depuis TikTok ou Instagram (appli installée sur le téléphone).
   const params = new URLSearchParams(location.search);
@@ -1176,6 +1237,21 @@ async function demarrer() {
     if (document.visibilityState === "visible" && /^#\/(courses|menus)$/.test(location.hash)) routeur();
   });
   routeur();
+  setTimeout(garderToutHorsLigne, 3000);
+}
+
+// Charge chaque fiche et sa photo pour qu'elles restent lisibles hors ligne.
+async function garderToutHorsLigne() {
+  if (horsLigne || !("serviceWorker" in navigator) || !navigator.serviceWorker.controller) return;
+  let recettes;
+  try { recettes = await api("/api/recettes"); } catch (_) { return; }
+  if (horsLigne) return;
+  await Promise.all(["/api/etat", "/api/tags", "/api/partage"].map((u) => fetch(u).catch(() => {})));
+  for (const r of recettes) {
+    if (horsLigne) return;
+    await fetch(`/api/recettes/${r.id}`).catch(() => {});
+    if (r.miniature) await fetch(`/images/${encodeURI(r.miniature)}`).catch(() => {});
+  }
 }
 
 demarrer();

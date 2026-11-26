@@ -221,3 +221,6 @@ details pre { white-space: pre-wrap; font-family: inherit; font-size: .9rem; col
 .jours-choix { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 10px 0; }
 .jours-choix button { flex-direction: column; align-items: flex-start; white-space: normal; text-align: left; font-weight: 400; }
 .jours-choix button.principal .aide { color: #fff; }
+
+.hors-ligne { background: #fef3c7; color: #78350f; font-size: .9rem; padding: 8px 16px; text-align: center; }
+@media (prefers-color-scheme: dark) { .hors-ligne { background: #422006; color: #fde68a; } }

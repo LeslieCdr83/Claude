@@ -166,6 +166,15 @@ Sur Android, « Mes recettes » apparaît ensuite dans le menu Partager de TikTo
 
 L'ordinateur doit être allumé, avec Mes recettes lancé, pour que le téléphone y accède.
 
+## Hors ligne
+
+Chaque appareil garde une copie de l'appli, des recettes (fiches, versions TM7 et Ninja, photo principale), du menu de la semaine et de la liste de courses. Quand l'ordinateur est éteint ou injoignable, un bandeau jaune s'affiche et l'appli montre cette copie : tu peux lire les recettes, chercher, consulter le menu et cocher ta liste de courses.
+
+- La copie se met à jour à chaque ouverture de l'appli quand l'ordinateur répond.
+- Les changements faits hors ligne sur la liste de courses et le menu sont envoyés dès que l'ordinateur répond de nouveau.
+- Importer une vidéo, analyser avec Claude ou modifier une recette demande l'ordinateur allumé.
+- Sur iPhone, ouvre l'appli au moins une fois par semaine : Safari peut effacer la copie d'une appli web inutilisée.
+
 ## Données
 
 Les recettes vivent dans `data/recettes.db` et les images dans `data/images`. La liste de courses et le menu de la semaine sont dans `data/partage.json` : le PC et le téléphone partagent les mêmes. Sauvegarde ce dossier pour garder ta bibliothèque.
