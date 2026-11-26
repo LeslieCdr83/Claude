@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Mes recettes</title>
+  <meta name="theme-color" content="#0d9488">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/icone.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icone-192.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="barre">
+    <a href="#/" class="logo">Mes recettes</a>
+    <nav>
+      <a href="#/menus">Menus</a>
+      <a href="#/courses" id="lien-courses">Courses <span id="compteur-courses"></span></a>
+      <a href="#/nouvelle" aria-label="Nouvelle recette">+</a>
+      <a href="#/reglages" aria-label="Réglages">⚙</a>
+    </nav>
+  </header>
+
+  <div id="hors-ligne" class="hors-ligne" role="status" hidden></div>
+  <main id="vue"></main>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+recettes/data/
+recettes/.env
+recettes/reglages.txt
+recettes/installation.log

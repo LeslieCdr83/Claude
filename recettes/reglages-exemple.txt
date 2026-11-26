@@ -1,0 +1,21 @@
+# Copie ce fichier sous le nom reglages.txt puis remplis les valeurs.
+
+# Clé API Claude (https://console.anthropic.com). Plus simple : saisis-la dans la page Réglages de l'appli.
+ANTHROPIC_API_KEY=
+
+# Modèle de transcription locale : tiny, base, small (conseillé), medium.
+MODELE_WHISPER=small
+
+# Fichier de cookies au format Netscape, utile pour Instagram. Optionnel.
+COOKIES_FICHIER=
+
+# Modèle exact de ton airfryer Ninja (écrit sous l'appareil), pour des réglages plus précis.
+# Exemple : MODELE_AIRFRYER=Ninja Foodi Dual Zone AF400EU
+MODELE_AIRFRYER=
+
+# Nombre de personnes affiché par défaut sur les fiches et utilisé pour les versions appareils.
+PORTIONS_DEFAUT=4
+
+# Rédige automatiquement les versions Thermomix et airfryer après chaque import (oui ou non).
+# Chaque adaptation coûte environ 2 à 4 centimes en plus.
+ADAPTATION_AUTO=oui
